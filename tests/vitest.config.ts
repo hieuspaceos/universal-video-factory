@@ -1,4 +1,4 @@
-// Vitest configuration for video-factory unit tests
+// Vitest configuration for video-factory unit and integration tests
 
 import { defineConfig } from "vitest/config";
 import path from "path";
@@ -10,7 +10,7 @@ const projectRoot = path.resolve(__dirname, "..");
 export default defineConfig({
   root: projectRoot,
   test: {
-    include: ["tests/unit/**/*.test.ts"],
+    include: ["tests/unit/**/*.test.ts", "tests/integration/**/*.test.ts"],
     environment: "node",
     globals: false,
     reporters: ["verbose"],
