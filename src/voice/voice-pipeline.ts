@@ -3,10 +3,9 @@
 
 import fs from "fs";
 import path from "path";
-import { execSync } from "child_process";
 import { preprocessScript } from "./script-preprocessor.js";
-import { textToSpeech } from "./elevenlabs-client.js";
-import { alignAudio, ensureServiceRunning } from "./whisperx-client.js";
+import { textToSpeechWithTimestamps } from "./elevenlabs-client.js";
+import type { ElevenLabsAlignment } from "./elevenlabs-client.js";
 import { mergeTimestamps, saveTimestamps } from "./timestamp-merger.js";
 import type { WordTimestamp } from "./types.js";
 
@@ -42,56 +41,40 @@ export interface VoicePipelineResult {
   sceneDurations: SceneDuration[];
 }
 
-/** Get audio duration in seconds using ffprobe */
-function getAudioDuration(audioPath: string): number {
-  const result = execSync(
-    `ffprobe -v error -show_entries format=duration -of csv=p=0 "${audioPath}"`,
-    { encoding: "utf-8" }
-  ).trim();
-  return parseFloat(result);
-}
-
 /**
- * Generate estimated word-level timestamps by distributing words
- * evenly across the audio duration. Used as fallback when WhisperX unavailable.
+ * Convert ElevenLabs character-level alignment to word-level timestamps.
+ * Groups consecutive non-space characters into words, using the first
+ * character's start and last character's end as word boundaries.
  */
-function estimateWordTimestamps(cleanText: string, totalDuration: number): WordTimestamp[] {
-  const words = cleanText.split(/\s+/).filter(Boolean);
-  if (words.length === 0) return [];
+function alignmentToWordTimestamps(alignment: ElevenLabsAlignment): WordTimestamp[] {
+  const { characters, character_start_times_seconds, character_end_times_seconds } = alignment;
+  const words: WordTimestamp[] = [];
+  let currentWord = "";
+  let wordStart = -1;
+  let wordEnd = 0;
 
-  // Estimate each word's duration proportional to its character length
-  const totalChars = words.reduce((sum, w) => sum + w.length, 0);
-  let cursor = 0;
-
-  return words.map((word) => {
-    const wordDuration = (word.length / totalChars) * totalDuration;
-    const start = cursor;
-    const end = cursor + wordDuration;
-    cursor = end;
-    return { word, start: parseFloat(start.toFixed(3)), end: parseFloat(end.toFixed(3)) };
-  });
-}
-
-/**
- * Try WhisperX alignment, fall back to estimated timestamps if unavailable.
- */
-async function getWordTimestamps(
-  audioPath: string,
-  cleanText: string,
-  language: string
-): Promise<WordTimestamp[]> {
-  try {
-    await ensureServiceRunning();
-    const timestamps = await alignAudio(audioPath, language);
-    console.log(`[voice] WhisperX returned ${timestamps.length} word timestamp(s)`);
-    return timestamps;
-  } catch (err) {
-    console.warn(`[voice] WhisperX unavailable, using estimated timestamps: ${(err as Error).message}`);
-    const duration = getAudioDuration(audioPath);
-    const estimated = estimateWordTimestamps(cleanText, duration);
-    console.log(`[voice] Generated ${estimated.length} estimated word timestamp(s) over ${duration.toFixed(1)}s`);
-    return estimated;
+  for (let i = 0; i < characters.length; i++) {
+    const ch = characters[i];
+    if (ch === " " || ch === "\n" || ch === "\t") {
+      // Whitespace: flush current word
+      if (currentWord.length > 0) {
+        words.push({ word: currentWord, start: wordStart, end: wordEnd });
+        currentWord = "";
+        wordStart = -1;
+      }
+    } else {
+      if (wordStart < 0) wordStart = character_start_times_seconds[i];
+      wordEnd = character_end_times_seconds[i];
+      currentWord += ch;
+    }
   }
+  // Flush last word
+  if (currentWord.length > 0) {
+    words.push({ word: currentWord, start: wordStart, end: wordEnd });
+  }
+
+  console.log(`[voice] ElevenLabs alignment: ${words.length} word timestamp(s)`);
+  return words;
 }
 
 /**
@@ -113,15 +96,16 @@ export async function runVoicePipeline(
   const { cleanText, sceneMarkers } = preprocessScript(rawScript);
   console.log(`[voice] Preprocessed script: ${sceneMarkers.length} scene(s), ${cleanText.split(/\s+/).length} words`);
 
-  // 2. Generate TTS audio
+  // 2. Generate TTS audio with character-level alignment from ElevenLabs
   const audioDir = path.join(opts.outputDir, "audio");
   fs.mkdirSync(audioDir, { recursive: true });
-  const audioPath = path.join(audioDir, "voiceover.wav");
-  console.log("[voice] Generating TTS audio via ElevenLabs...");
-  await textToSpeech(cleanText, voiceId, audioPath);
+  const audioPathHint = path.join(audioDir, "voiceover.wav");
+  console.log("[voice] Generating TTS audio with timestamps via ElevenLabs...");
+  const ttsResult = await textToSpeechWithTimestamps(cleanText, voiceId, audioPathHint);
+  const audioPath = ttsResult.outputPath; // actual path (may be .mp3)
 
-  // 3. Get word timestamps (WhisperX or fallback)
-  const wordTimestamps = await getWordTimestamps(audioPath, cleanText, language);
+  // 3. Convert character-level alignment to word-level timestamps
+  const wordTimestamps = alignmentToWordTimestamps(ttsResult.alignment);
 
   // 4. Merge timestamps with scene markers
   const merged = mergeTimestamps(wordTimestamps, sceneMarkers);

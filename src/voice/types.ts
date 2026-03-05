@@ -25,6 +25,8 @@ export interface VoiceSettings {
   similarity_boost: number;
   style?: number;
   use_speaker_boost?: boolean;
+  /** Speaking speed multiplier (0.7–1.3). Lower = slower narration. */
+  speed?: number;
 }
 
 export interface TTSOptions {

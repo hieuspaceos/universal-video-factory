@@ -71,6 +71,19 @@ export async function cloneVoice(name: string, referenceAudioPath: string): Prom
   return data.voice_id;
 }
 
+/** Character-level alignment from ElevenLabs with-timestamps endpoint */
+export interface ElevenLabsAlignment {
+  characters: string[];
+  character_start_times_seconds: number[];
+  character_end_times_seconds: number[];
+}
+
+/** Result from textToSpeechWithTimestamps */
+export interface TTSWithTimestampsResult {
+  outputPath: string;
+  alignment: ElevenLabsAlignment;
+}
+
 /**
  * Convert text to speech and save the audio to outputPath.
  * Returns the output file path.
@@ -81,6 +94,21 @@ export async function textToSpeech(
   outputPath: string,
   options: TTSOptions = {}
 ): Promise<string> {
+  const result = await textToSpeechWithTimestamps(text, voiceId, outputPath, options);
+  return result.outputPath;
+}
+
+/**
+ * Convert text to speech with character-level timestamps.
+ * Uses the /with-timestamps endpoint to get alignment data directly from ElevenLabs.
+ * Returns both the audio file path and character-level timing.
+ */
+export async function textToSpeechWithTimestamps(
+  text: string,
+  voiceId: string,
+  outputPath: string,
+  options: TTSOptions = {}
+): Promise<TTSWithTimestampsResult> {
   const modelId = options.modelId ?? DEFAULT_MODEL;
   const voiceSettings = options.voiceSettings ?? DEFAULT_VOICE_SETTINGS;
 
@@ -88,15 +116,18 @@ export async function textToSpeech(
     text,
     model_id: modelId,
     voice_settings: voiceSettings,
+    output_format: "mp3_44100_128",
   };
+
+  // Use .mp3 extension since with-timestamps returns base64-encoded audio
+  const mp3Path = outputPath.replace(/\.wav$/, ".mp3");
 
   return withRetry(
     async () => {
-      const res = await fetch(`${BASE_URL}/v1/text-to-speech/${voiceId}`, {
+      const res = await fetch(`${BASE_URL}/v1/text-to-speech/${voiceId}/with-timestamps`, {
         method: "POST",
         headers: headers({
           "Content-Type": "application/json",
-          Accept: "audio/wav",
         }),
         body: JSON.stringify(body),
       });
@@ -110,7 +141,6 @@ export async function textToSpeech(
         if (detail.includes("quota") || detail.includes("character_limit")) {
           console.error("[elevenlabs] Character quota exceeded. Upgrade plan or reduce text length.");
         }
-        // 422 is not retryable — throw without retry by re-throwing after max attempts
         throw new Error(`textToSpeech failed (422): ${detail}`);
       }
 
@@ -118,11 +148,22 @@ export async function textToSpeech(
         throw new Error(`textToSpeech failed: ${res.status} ${await res.text()}`);
       }
 
-      const buffer = await res.arrayBuffer();
-      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-      fs.writeFileSync(outputPath, Buffer.from(buffer));
-      console.log(`[elevenlabs] Saved audio → ${outputPath}`);
-      return outputPath;
+      const data = await res.json() as {
+        audio_base64: string;
+        alignment: ElevenLabsAlignment;
+        normalized_alignment: ElevenLabsAlignment;
+      };
+
+      // Decode base64 audio and write MP3 file
+      const audioBuffer = Buffer.from(data.audio_base64, "base64");
+      fs.mkdirSync(path.dirname(mp3Path), { recursive: true });
+      fs.writeFileSync(mp3Path, audioBuffer);
+      console.log(`[elevenlabs] Saved audio → ${mp3Path}`);
+
+      // Prefer normalized_alignment (post text-normalization) for accuracy
+      const alignment = data.normalized_alignment ?? data.alignment;
+
+      return { outputPath: mp3Path, alignment };
     },
     { maxAttempts: 3, initialDelayMs: 1000 }
   );
