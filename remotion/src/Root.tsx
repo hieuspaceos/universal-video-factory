@@ -26,6 +26,13 @@ const defaultProps = {
   width: 1920,
   height: 1080,
   totalDurationFrames: 150,
+  // Phase 4 visual effects — empty defaults for Studio preview
+  brand: undefined,
+  clicks: [],
+  zoomEvents: [],
+  introDuration: 90,
+  outroDuration: 120,
+  cta: undefined,
 };
 
 /**
