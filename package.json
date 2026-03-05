@@ -12,20 +12,29 @@
     "typecheck": "tsc --noEmit",
     "start": "node dist/cli/index.js",
     "test": "vitest run --config tests/vitest.config.ts",
-    "test:watch": "vitest --config tests/vitest.config.ts"
+    "test:watch": "vitest --config tests/vitest.config.ts",
+    "dashboard:dev": "cd src/dashboard && npx vite",
+    "dashboard:build": "cd src/dashboard && npx vite build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.3",
     "@browserbasehq/stagehand": "^1.13.0",
+    "@hono/node-server": "^1.19.11",
     "@remotion/bundler": "^4.0.432",
     "@remotion/renderer": "^4.0.432",
+    "better-sqlite3": "^12.6.2",
     "dotenv": "^16.4.7",
+    "hono": "^4.12.5",
+    "nanoid": "^5.1.6",
     "playwright": "^1.50.1",
+    "ws": "^8.19.0",
     "yargs": "^17.7.2",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.13.9",
+    "@types/ws": "^8.18.1",
     "@types/yargs": "^17.0.33",
     "tsup": "^8.4.0",
     "tsx": "^4.19.2",
