@@ -1,4 +1,5 @@
-// Pipeline coordinator — orchestrates AI Director → Capture phases sequentially
+// Pipeline coordinator — full E2E orchestration:
+// AI Director → Capture → Convert webm → Compositor → FFmpeg HEVC export
 
 import * as fs from "fs/promises";
 import * as path from "path";
@@ -7,9 +8,19 @@ import { ScriptGenerator } from "../ai-director/script-generator.js";
 import { ClickPlanBuilder } from "../ai-director/click-plan-builder.js";
 import { BrowserManager } from "../capture/browser-manager.js";
 import { SceneRecorder } from "../capture/scene-recorder.js";
-import type { PipelineConfig, CaptureResult, PipelineResult } from "./types.js";
+import { renderVideo } from "../compositor/render-engine.js";
+import { loadBrand, toRemotion } from "../compositor/brand-loader.js";
+import { convertWebmToMp4, exportFinalVideo } from "../export/ffmpeg-exporter.js";
+import type { PipelineConfig, CaptureResult, PipelineResult, ExportPhaseResult } from "./types.js";
 import type { DirectorConfig } from "../ai-director/types.js";
 import type { BrowserConfig, CaptureMetadata } from "../capture/types.js";
+
+interface OutputDirs {
+  output: string;
+  scenes: string;
+  audio: string;
+  temp: string;
+}
 
 export class PipelineCoordinator {
   private config: PipelineConfig;
@@ -23,19 +34,60 @@ export class PipelineCoordinator {
     console.log(`[Pipeline] Starting for: ${this.config.url} — "${this.config.feature}"`);
 
     try {
-      // Create output directory structure
       const dirs = await this.createOutputDirs();
 
-      // Phase A: AI Director
+      // Phase A: AI Director — screenshot → script + click plan
+      const phaseA = Date.now();
       const captureResult = await this.runAIDirectorPhase(dirs);
+      console.log(`[Pipeline] Phase A done in ${((Date.now() - phaseA) / 1000).toFixed(1)}s`);
 
-      // Phase B: Capture Engine
+      // Phase B: Capture — execute click plan, record scenes
+      const phaseB = Date.now();
       await this.runCapturePhase(captureResult, dirs);
+      console.log(`[Pipeline] Phase B done in ${((Date.now() - phaseB) / 1000).toFixed(1)}s`);
+
+      // Phase C: Convert .webm → .mp4 for Remotion
+      const phaseC = Date.now();
+      await this.convertScenesWebmToMp4(dirs);
+      console.log(`[Pipeline] Phase C (webm→mp4) done in ${((Date.now() - phaseC) / 1000).toFixed(1)}s`);
+
+      // Phase D: Remotion compositor → draft.mp4
+      const phaseD = Date.now();
+      const draftPath = path.join(dirs.output, "draft.mp4");
+      const brand = await loadBrand(this.config.brand);
+      const remotionBrand = toRemotion(brand);
+
+      await renderVideo({
+        projectDir: dirs.output,
+        outputPath: draftPath,
+        codec: "h264",
+        concurrency: 4,
+      });
+      console.log(`[Pipeline] Phase D (compositor) done in ${((Date.now() - phaseD) / 1000).toFixed(1)}s`);
+
+      // Phase E: FFmpeg HEVC export
+      const phaseE = Date.now();
+      const finalPath = path.join(dirs.output, "final_1080p.mp4");
+      const exportResult = await exportFinalVideo(draftPath, finalPath);
+      console.log(`[Pipeline] Phase E (export/${exportResult.encoder}) done in ${((Date.now() - phaseE) / 1000).toFixed(1)}s`);
+
+      // Cleanup temp files
+      await this.cleanupTemp(dirs.temp);
+
+      const elapsedMs = Date.now() - startedAt;
+      console.log(`[Pipeline] Complete in ${(elapsedMs / 1000).toFixed(1)}s → ${finalPath}`);
+
+      const exportPhase: ExportPhaseResult = {
+        finalPath,
+        encoder: exportResult.encoder,
+        durationMs: exportResult.durationMs,
+      };
 
       return {
         capture: captureResult,
+        export: exportPhase,
         success: true,
-        elapsedMs: Date.now() - startedAt,
+        elapsedMs,
       };
     } catch (err) {
       return {
@@ -63,15 +115,14 @@ export class PipelineCoordinator {
     const browserManager = new BrowserManager(browserConfig);
 
     console.log("[Pipeline] Phase A: Launching browser for screenshot...");
-    const page = await browserManager.launch(dirs.temp);
+    await browserManager.launch(dirs.temp);
     let screenshotPath = "";
 
     try {
       await browserManager.navigateTo(this.config.url);
 
-      // Manual mode: pause for user interaction before screenshot
       if (this.config.manual) {
-        console.log("[Pipeline] MANUAL MODE — press Enter after navigating to the desired state...");
+        console.log("[Pipeline] MANUAL MODE — press Enter after navigating to desired state...");
         await new Promise<void>((resolve) => process.stdin.once("data", () => resolve()));
       }
 
@@ -82,13 +133,11 @@ export class PipelineCoordinator {
       await browserManager.close();
     }
 
-    // Analyze screenshot with Claude Vision
     const analyzer = new ScreenshotAnalyzer(directorConfig);
     console.log("[Pipeline] Analyzing screenshot with Claude Vision...");
     const analysis = await analyzer.analyze(screenshotPath, this.config.feature);
     console.log(`[Pipeline] Found ${analysis.elements.length} relevant element(s)`);
 
-    // Generate narration script
     const scriptGen = new ScriptGenerator(directorConfig);
     console.log("[Pipeline] Generating script...");
     const script = await scriptGen.generate(
@@ -99,7 +148,6 @@ export class PipelineCoordinator {
     );
     console.log(`[Pipeline] Script has ${script.scenes.length} scene(s)`);
 
-    // Build click plan
     const planBuilder = new ClickPlanBuilder(directorConfig);
     const clickPlan = planBuilder.build(script, analysis.elements, this.config.url, this.config.feature);
     const clickPlanPath = await planBuilder.save(clickPlan, dirs.output);
@@ -119,10 +167,7 @@ export class PipelineCoordinator {
     const clickPlan = JSON.parse(raw);
 
     const browserConfig = this.buildBrowserConfig();
-    const recorder = new SceneRecorder(
-      browserConfig,
-      parseInt(process.env.CLICK_RETRY_ATTEMPTS ?? "2")
-    );
+    const recorder = new SceneRecorder(browserConfig, parseInt(process.env.CLICK_RETRY_ATTEMPTS ?? "2"));
 
     console.log(`[Pipeline] Phase B: Recording ${clickPlan.actions.length} scene(s)...`);
     const results = await recorder.recordAllScenes(
@@ -132,14 +177,13 @@ export class PipelineCoordinator {
       dirs.temp
     );
 
-    // Build metadata
     const metadata: CaptureMetadata = {
       url: this.config.url,
       feature: this.config.feature,
       capturedAt: new Date().toISOString(),
-      viewportWidth: browserConfig.viewportWidth,
-      viewportHeight: browserConfig.viewportHeight,
-      fps: browserConfig.recordingFps,
+      viewportWidth: this.buildBrowserConfig().viewportWidth,
+      viewportHeight: this.buildBrowserConfig().viewportHeight,
+      fps: this.buildBrowserConfig().recordingFps,
       totalScenes: results.length,
       scenes: results.map((r, i) => ({
         index: r.sceneIndex,
@@ -154,10 +198,40 @@ export class PipelineCoordinator {
     };
 
     await fs.writeFile(captureResult.metadataPath, JSON.stringify(metadata, null, 2), "utf-8");
-    console.log(`[Pipeline] Metadata saved: ${captureResult.metadataPath}`);
-
     const successCount = results.filter((r) => r.success).length;
     console.log(`[Pipeline] Recorded ${successCount}/${results.length} scene(s) successfully`);
+  }
+
+  /** Phase C: Convert all .webm files in scenes/ to .mp4 */
+  private async convertScenesWebmToMp4(dirs: OutputDirs): Promise<void> {
+    const entries = await fs.readdir(dirs.scenes);
+    const webmFiles = entries.filter((f) => f.endsWith(".webm"));
+
+    if (webmFiles.length === 0) {
+      console.log("[Pipeline] No .webm files found — skipping conversion");
+      return;
+    }
+
+    console.log(`[Pipeline] Converting ${webmFiles.length} .webm file(s) to .mp4...`);
+    await Promise.all(
+      webmFiles.map(async (file) => {
+        const inputPath = path.join(dirs.scenes, file);
+        const outputPath = path.join(dirs.scenes, file.replace(/\.webm$/, ".mp4"));
+        await convertWebmToMp4(inputPath, outputPath);
+        await fs.unlink(inputPath); // remove source webm after conversion
+      })
+    );
+  }
+
+  /** Remove temp directory contents after successful pipeline run */
+  private async cleanupTemp(tempDir: string): Promise<void> {
+    try {
+      await fs.rm(tempDir, { recursive: true, force: true });
+      console.log(`[Pipeline] Cleaned temp: ${tempDir}`);
+    } catch {
+      // Non-fatal — log and continue
+      console.warn(`[Pipeline] Could not clean temp dir: ${tempDir}`);
+    }
   }
 
   private buildBrowserConfig(): BrowserConfig {
@@ -186,11 +260,4 @@ export class PipelineCoordinator {
     console.log(`[Pipeline] Output directory: ${output}`);
     return dirs;
   }
-}
-
-interface OutputDirs {
-  output: string;
-  scenes: string;
-  audio: string;
-  temp: string;
 }

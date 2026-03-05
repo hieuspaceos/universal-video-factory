@@ -1,0 +1,23 @@
+{
+  "name": "Video Factory",
+  "colors": {
+    "primary": "#2563EB",
+    "secondary": "#1E40AF",
+    "accent": "#FFD700",
+    "text": "#FFFFFF",
+    "background": "#0F172A"
+  },
+  "fonts": {
+    "heading": "Inter",
+    "body": "Inter"
+  },
+  "intro": {
+    "tagline": "Tutorial auto-generated",
+    "duration": 3
+  },
+  "outro": {
+    "cta": "Try it yourself",
+    "url": "https://github.com",
+    "duration": 4
+  }
+}

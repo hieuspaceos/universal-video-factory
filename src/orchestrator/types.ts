@@ -69,10 +69,17 @@ export interface CompositorResult {
   finalPath?: string;
 }
 
+export interface ExportPhaseResult {
+  finalPath: string;
+  encoder: string;
+  durationMs: number;
+}
+
 export interface PipelineResult {
   capture?: CaptureResult;
   voice?: VoiceResult;
   compositor?: CompositorResult;
+  export?: ExportPhaseResult;
   success: boolean;
   error?: string;
   elapsedMs: number;
