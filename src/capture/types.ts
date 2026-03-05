@@ -42,6 +42,10 @@ export interface CaptureMetadata {
   fps: number;
   totalScenes: number;
   scenes: SceneMetadataEntry[];
+  /** Relative path to voiceover audio file */
+  audioFile?: string;
+  /** Total audio duration in seconds */
+  totalDuration?: number;
 }
 
 export interface SceneMetadataEntry {
@@ -53,6 +57,12 @@ export interface SceneMetadataEntry {
   actionDescription: string;
   usedFallback: boolean;
   cursorEvents: CursorEvent[];
+  /** Scene identifier from voice timestamps */
+  id?: string;
+  /** Scene start time in seconds (from voice alignment) */
+  start?: number;
+  /** Scene end time in seconds (from voice alignment) */
+  end?: number;
 }
 
 export interface CookieEntry {

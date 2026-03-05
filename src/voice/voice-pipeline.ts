@@ -23,6 +23,14 @@ export interface VoicePipelineOptions {
   language?: string;
 }
 
+export interface SceneDuration {
+  id: string;
+  /** Duration of this scene's narration in seconds */
+  durationSec: number;
+  /** Start time of this scene's narration in seconds */
+  startSec: number;
+}
+
 export interface VoicePipelineResult {
   /** Path to generated audio WAV file */
   audioPath: string;
@@ -30,6 +38,8 @@ export interface VoicePipelineResult {
   timestampsPath: string;
   /** Total audio duration in seconds */
   totalDuration: number;
+  /** Per-scene narration durations for driving video capture timing */
+  sceneDurations: SceneDuration[];
 }
 
 /** Get audio duration in seconds using ffprobe */
@@ -120,9 +130,17 @@ export async function runVoicePipeline(
   const timestampsPath = path.join(opts.outputDir, "words_timestamps.json");
   saveTimestamps(merged, timestampsPath);
 
+  // Compute per-scene durations for voice-driven capture timing
+  const sceneDurations: SceneDuration[] = merged.scenes.map((s) => ({
+    id: s.id,
+    durationSec: s.end_time - s.start_time,
+    startSec: s.start_time,
+  }));
+
   return {
     audioPath,
     timestampsPath,
     totalDuration: merged.total_duration,
+    sceneDurations,
   };
 }

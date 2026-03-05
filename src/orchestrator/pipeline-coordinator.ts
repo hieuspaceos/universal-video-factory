@@ -1,5 +1,6 @@
-// Pipeline coordinator — full E2E orchestration:
-// AI Director → Capture → Convert webm → Compositor → FFmpeg HEVC export
+// Pipeline coordinator — voice-first E2E orchestration:
+// A: AI Director → B: Voice (TTS+align) → C: Capture (voice-timed) → D: Convert → E: Render → F: Export
+// Voice is generated BEFORE capture so video recording matches narration timing exactly.
 
 import * as fs from "fs/promises";
 import * as path from "path";
@@ -19,6 +20,7 @@ import {
 } from "./checkpoint-manager.js";
 import { handleError } from "./error-handler.js";
 import { runVoicePipeline } from "../voice/voice-pipeline.js";
+import type { VoicePipelineResult } from "../voice/voice-pipeline.js";
 import type { ProgressDisplay } from "../cli/progress-display.js";
 import type { PipelineConfig, CaptureResult, PipelineResult, ExportPhaseResult } from "./types.js";
 import type { DirectorConfig } from "../ai-director/types.js";
@@ -62,21 +64,19 @@ export class PipelineCoordinator {
     try {
       const dirs = await this.createOutputDirs();
 
-      // Phase A: AI Director — screenshot → script + click plan
+      // ── Phase A: AI Director — screenshot → script + click plan ──
       let captureResult: CaptureResult;
       if (isPhaseComplete(checkpoint, "A")) {
         const data = getPhaseData(checkpoint, "A") as { clickPlanPath: string; scriptPath: string; metadataPath: string };
         console.log("[Pipeline] Phase A: skipped (checkpoint)");
         captureResult = {
-          scenes: [],
-          scriptPath: data.scriptPath,
-          clickPlanPath: data.clickPlanPath,
-          metadataPath: data.metadataPath,
+          scenes: [], scriptPath: data.scriptPath,
+          clickPlanPath: data.clickPlanPath, metadataPath: data.metadataPath,
           outputDir: dirs.output,
         };
       } else {
         this.opts.progress?.startPhase("A", "AI Director — analyze + script");
-        const phaseA = Date.now();
+        const t = Date.now();
         captureResult = await this.runAIDirectorPhase(dirs);
         await saveCheckpoint(dirs.output, "A", {
           clickPlanPath: captureResult.clickPlanPath,
@@ -84,113 +84,108 @@ export class PipelineCoordinator {
           metadataPath: captureResult.metadataPath,
         });
         this.opts.progress?.completePhase("A");
-        console.log(`[Pipeline] Phase A done in ${((Date.now() - phaseA) / 1000).toFixed(1)}s`);
+        console.log(`[Pipeline] Phase A done in ${((Date.now() - t) / 1000).toFixed(1)}s`);
       }
 
-      // Phase B: Capture — execute click plan, record scenes
-      if (!isPhaseComplete(checkpoint, "B")) {
-        this.opts.progress?.startPhase("B", "Capture — recording scenes");
-        const phaseB = Date.now();
-        await this.runCapturePhase(captureResult, dirs);
-        await saveCheckpoint(dirs.output, "B", {});
-        this.opts.progress?.completePhase("B");
-        console.log(`[Pipeline] Phase B done in ${((Date.now() - phaseB) / 1000).toFixed(1)}s`);
-      } else {
+      // ── Phase B: Voice pipeline — TTS + alignment (BEFORE capture) ──
+      let voiceResult: VoicePipelineResult;
+      if (isPhaseComplete(checkpoint, "B")) {
+        const data = getPhaseData(checkpoint, "B") as {
+          audioPath: string; timestampsPath: string;
+          totalDuration: number; sceneDurations: VoicePipelineResult["sceneDurations"];
+        };
         console.log("[Pipeline] Phase B: skipped (checkpoint)");
-      }
-
-      // Phase C: Convert .webm → .mp4 for Remotion
-      if (!isPhaseComplete(checkpoint, "C")) {
-        this.opts.progress?.startPhase("C", "Convert webm to mp4");
-        const phaseC = Date.now();
-        await this.convertScenesWebmToMp4(dirs);
-        await saveCheckpoint(dirs.output, "C", {});
-        this.opts.progress?.completePhase("C");
-        console.log(`[Pipeline] Phase C (webm→mp4) done in ${((Date.now() - phaseC) / 1000).toFixed(1)}s`);
+        voiceResult = {
+          audioPath: data.audioPath, timestampsPath: data.timestampsPath,
+          totalDuration: data.totalDuration, sceneDurations: data.sceneDurations,
+        };
       } else {
-        console.log("[Pipeline] Phase C: skipped (checkpoint)");
-      }
-
-      // Phase C2: Voice pipeline — TTS + WhisperX alignment → words_timestamps.json
-      if (!isPhaseComplete(checkpoint, "C2")) {
-        this.opts.progress?.startPhase("C2", "Voice — TTS + alignment");
-        const phaseC2 = Date.now();
-        const voiceResult = await runVoicePipeline({
+        this.opts.progress?.startPhase("B", "Voice — TTS + alignment");
+        const t = Date.now();
+        voiceResult = await runVoicePipeline({
           scriptPath: captureResult.scriptPath,
           outputDir: dirs.output,
           voiceId: this.config.voice ?? undefined,
           language: this.config.lang,
         });
-
-        // Update capture_metadata.json with audio info and scene timing from voice
-        await this.updateMetadataWithVoice(captureResult.metadataPath, voiceResult.audioPath, voiceResult.totalDuration);
-
-        await saveCheckpoint(dirs.output, "C2", {
+        await saveCheckpoint(dirs.output, "B", {
           audioPath: voiceResult.audioPath,
           timestampsPath: voiceResult.timestampsPath,
+          totalDuration: voiceResult.totalDuration,
+          sceneDurations: voiceResult.sceneDurations,
         });
-        this.opts.progress?.completePhase("C2");
-        console.log(`[Pipeline] Phase C2 (voice) done in ${((Date.now() - phaseC2) / 1000).toFixed(1)}s`);
-      } else {
-        console.log("[Pipeline] Phase C2: skipped (checkpoint)");
+        this.opts.progress?.completePhase("B");
+        console.log(`[Pipeline] Phase B (voice) done in ${((Date.now() - t) / 1000).toFixed(1)}s`);
       }
 
-      // Phase D: Remotion compositor → draft.mp4
-      const draftPath = path.join(dirs.output, "draft.mp4");
+      // ── Phase C: Capture — record video timed to voice narration ──
+      if (!isPhaseComplete(checkpoint, "C")) {
+        this.opts.progress?.startPhase("C", "Capture — voice-synced recording");
+        const t = Date.now();
+        await this.runCapturePhase(captureResult, dirs, voiceResult);
+        await saveCheckpoint(dirs.output, "C", {});
+        this.opts.progress?.completePhase("C");
+        console.log(`[Pipeline] Phase C (capture) done in ${((Date.now() - t) / 1000).toFixed(1)}s`);
+      } else {
+        console.log("[Pipeline] Phase C: skipped (checkpoint)");
+      }
+
+      // ── Phase D: Convert .webm → .mp4 for Remotion ──
       if (!isPhaseComplete(checkpoint, "D")) {
-        this.opts.progress?.startPhase("D", "Compositor — rendering");
-        const phaseD = Date.now();
-        const brand = await loadBrand(this.config.brand);
-        toRemotion(brand); // validate brand maps correctly
-        const renderCodec = this.opts.preview ? "h264" : "h264";
-        await renderVideo({
-          projectDir: dirs.output,
-          outputPath: draftPath,
-          codec: renderCodec,
-          concurrency: 4,
-        });
-        await saveCheckpoint(dirs.output, "D", { draftPath });
+        this.opts.progress?.startPhase("D", "Convert webm to mp4");
+        const t = Date.now();
+        await this.convertScenesWebmToMp4(dirs);
+        await saveCheckpoint(dirs.output, "D", {});
         this.opts.progress?.completePhase("D");
-        console.log(`[Pipeline] Phase D (compositor) done in ${((Date.now() - phaseD) / 1000).toFixed(1)}s`);
+        console.log(`[Pipeline] Phase D (webm→mp4) done in ${((Date.now() - t) / 1000).toFixed(1)}s`);
       } else {
         console.log("[Pipeline] Phase D: skipped (checkpoint)");
       }
 
-      // Phase E: FFmpeg HEVC export
-      this.opts.progress?.startPhase("E", "FFmpeg export");
-      const phaseE = Date.now();
+      // ── Phase E: Remotion compositor → draft.mp4 ──
+      const draftPath = path.join(dirs.output, "draft.mp4");
+      if (!isPhaseComplete(checkpoint, "E")) {
+        this.opts.progress?.startPhase("E", "Compositor — rendering");
+        const t = Date.now();
+        const brand = await loadBrand(this.config.brand);
+        toRemotion(brand);
+        await renderVideo({
+          projectDir: dirs.output,
+          outputPath: draftPath,
+          codec: "h264",
+          concurrency: 4,
+        });
+        await saveCheckpoint(dirs.output, "E", { draftPath });
+        this.opts.progress?.completePhase("E");
+        console.log(`[Pipeline] Phase E (compositor) done in ${((Date.now() - t) / 1000).toFixed(1)}s`);
+      } else {
+        console.log("[Pipeline] Phase E: skipped (checkpoint)");
+      }
+
+      // ── Phase F: FFmpeg HEVC export ──
+      this.opts.progress?.startPhase("F", "FFmpeg export");
+      const t = Date.now();
       const suffix = this.opts.preview ? "720p" : "1080p";
       const finalPath = path.join(dirs.output, `final_${suffix}.mp4`);
       const exportResult = await exportFinalVideo(draftPath, finalPath);
-      await saveCheckpoint(dirs.output, "E", { finalPath });
-      this.opts.progress?.completePhase("E");
-      console.log(`[Pipeline] Phase E (export/${exportResult.encoder}) done in ${((Date.now() - phaseE) / 1000).toFixed(1)}s`);
+      await saveCheckpoint(dirs.output, "F", { finalPath });
+      this.opts.progress?.completePhase("F");
+      console.log(`[Pipeline] Phase F (export/${exportResult.encoder}) done in ${((Date.now() - t) / 1000).toFixed(1)}s`);
 
-      // Cleanup temp files
       await this.cleanupTemp(dirs.temp);
 
       const elapsedMs = Date.now() - startedAt;
       console.log(`[Pipeline] Complete in ${(elapsedMs / 1000).toFixed(1)}s → ${finalPath}`);
 
-      const exportPhase: ExportPhaseResult = {
-        finalPath,
-        encoder: exportResult.encoder,
-        durationMs: exportResult.durationMs,
-      };
-
       return {
         capture: captureResult,
-        export: exportPhase,
+        export: { finalPath, encoder: exportResult.encoder, durationMs: exportResult.durationMs },
         success: true,
         elapsedMs,
       };
     } catch (err) {
       handleError(err as Error);
-      return {
-        success: false,
-        error: (err as Error).message,
-        elapsedMs: Date.now() - startedAt,
-      };
+      return { success: false, error: (err as Error).message, elapsedMs: Date.now() - startedAt };
     }
   }
 
@@ -236,12 +231,7 @@ export class PipelineCoordinator {
 
     const scriptGen = new ScriptGenerator(directorConfig);
     console.log("[Pipeline] Generating script...");
-    const script = await scriptGen.generate(
-      analysis.elements,
-      this.config.feature,
-      this.config.lang,
-      dirs.output
-    );
+    const script = await scriptGen.generate(analysis.elements, this.config.feature, this.config.lang, dirs.output);
     console.log(`[Pipeline] Script has ${script.scenes.length} scene(s)`);
 
     const planBuilder = new ClickPlanBuilder(directorConfig);
@@ -257,81 +247,94 @@ export class PipelineCoordinator {
     };
   }
 
-  /** Phase B: Execute click plan via Playwright, record scenes */
-  private async runCapturePhase(captureResult: CaptureResult, dirs: OutputDirs): Promise<void> {
+  /** Phase C: Record video with voice-driven timing per scene */
+  private async runCapturePhase(
+    captureResult: CaptureResult,
+    dirs: OutputDirs,
+    voiceResult: VoicePipelineResult
+  ): Promise<void> {
     const raw = await fs.readFile(captureResult.clickPlanPath, "utf-8");
     const clickPlan = JSON.parse(raw);
-
     const browserConfig = this.buildBrowserConfig();
     const recorder = new SceneRecorder(browserConfig, parseInt(process.env.CLICK_RETRY_ATTEMPTS ?? "2"));
 
-    console.log(`[Pipeline] Phase B: Recording ${clickPlan.actions.length} scene(s)...`);
+    console.log(`[Pipeline] Phase C: Recording ${clickPlan.actions.length} scene(s) with voice timing...`);
     const results = await recorder.recordAllScenes(
       clickPlan.actions,
       this.config.url,
       dirs.scenes,
-      dirs.temp
+      dirs.temp,
+      voiceResult.sceneDurations
     );
 
+    // Build capture metadata — scenes reference the single continuous video
     const metadata: CaptureMetadata = {
       url: this.config.url,
       feature: this.config.feature,
       capturedAt: new Date().toISOString(),
-      viewportWidth: this.buildBrowserConfig().viewportWidth,
-      viewportHeight: this.buildBrowserConfig().viewportHeight,
-      fps: this.buildBrowserConfig().recordingFps,
+      viewportWidth: browserConfig.viewportWidth,
+      viewportHeight: browserConfig.viewportHeight,
+      fps: browserConfig.recordingFps,
       totalScenes: results.length,
-      // All scenes share one continuous video file — compute per-scene time offsets
-      scenes: results.map((r, i) => {
-        // Calculate scene start offset by summing durations of preceding scenes
-        const offsetMs = results.slice(0, i).reduce((sum, prev) => sum + prev.durationMs, 0);
-        return {
-          index: r.sceneIndex,
-          videoFile: r.videoPath ? path.basename(r.videoPath) : `scene-${String(r.sceneIndex).padStart(2, "0")}.mp4`,
-          durationMs: r.durationMs,
-          offsetMs,
-          clickX: clickPlan.actions[i]?.x ?? 0,
-          clickY: clickPlan.actions[i]?.y ?? 0,
-          actionDescription: clickPlan.actions[i]?.description ?? "",
-          usedFallback: clickPlan.actions[i]?.useFallback ?? false,
-          cursorEvents: [],
-        };
-      }),
+      scenes: results.map((r, i) => ({
+        index: r.sceneIndex,
+        videoFile: r.videoPath ? path.basename(r.videoPath) : `scene-01.mp4`,
+        durationMs: r.durationMs,
+        clickX: clickPlan.actions[i]?.x ?? 0,
+        clickY: clickPlan.actions[i]?.y ?? 0,
+        actionDescription: clickPlan.actions[i]?.description ?? "",
+        usedFallback: clickPlan.actions[i]?.useFallback ?? false,
+        cursorEvents: [],
+      })),
     };
+
+    // Merge voice timing directly into metadata (since voice ran before capture)
+    const tsRaw = await fs.readFile(voiceResult.timestampsPath, "utf-8");
+    const timestamps = JSON.parse(tsRaw);
+
+    metadata.audioFile = path.relative(dirs.output, voiceResult.audioPath);
+    metadata.totalDuration = voiceResult.totalDuration;
+    metadata.scenes = metadata.scenes.map((scene, i) => {
+      const boundary = timestamps.scenes?.[i];
+      const baseName = scene.videoFile.replace(/\.webm$/, ".mp4");
+      return {
+        ...scene,
+        id: boundary?.id ?? `SCENE:${String(i + 1).padStart(2, "0")}`,
+        videoFile: `scenes/${baseName}`,
+        start: boundary?.start_time ?? 0,
+        end: boundary?.end_time ?? voiceResult.totalDuration,
+      };
+    });
 
     await fs.writeFile(captureResult.metadataPath, JSON.stringify(metadata, null, 2), "utf-8");
     const successCount = results.filter((r) => r.success).length;
     console.log(`[Pipeline] Recorded ${successCount}/${results.length} scene(s) successfully`);
   }
 
-  /** Phase C: Convert all .webm files in scenes/ to .mp4 */
+  /** Phase D: Convert all .webm files in scenes/ to .mp4 */
   private async convertScenesWebmToMp4(dirs: OutputDirs): Promise<void> {
     const entries = await fs.readdir(dirs.scenes);
     const webmFiles = entries.filter((f) => f.endsWith(".webm"));
-
     if (webmFiles.length === 0) {
       console.log("[Pipeline] No .webm files found — skipping conversion");
       return;
     }
-
     console.log(`[Pipeline] Converting ${webmFiles.length} .webm file(s) to .mp4...`);
     await Promise.all(
       webmFiles.map(async (file) => {
         const inputPath = path.join(dirs.scenes, file);
         const outputPath = path.join(dirs.scenes, file.replace(/\.webm$/, ".mp4"));
         await convertWebmToMp4(inputPath, outputPath);
-        await fs.unlink(inputPath); // remove source webm after conversion
+        await fs.unlink(inputPath);
       })
     );
   }
 
-  /** Remove temp directory contents after successful pipeline run */
   private async cleanupTemp(tempDir: string): Promise<void> {
     try {
       await fs.rm(tempDir, { recursive: true, force: true });
       console.log(`[Pipeline] Cleaned temp: ${tempDir}`);
     } catch {
-      // Non-fatal — log and continue
       console.warn(`[Pipeline] Could not clean temp dir: ${tempDir}`);
     }
   }
@@ -346,45 +349,6 @@ export class PipelineCoordinator {
       pageLoadTimeoutMs: parseInt(process.env.PAGE_LOAD_TIMEOUT_MS ?? "30000"),
       clickActionTimeoutMs: parseInt(process.env.CLICK_ACTION_TIMEOUT_MS ?? "10000"),
     };
-  }
-
-  /**
-   * Update capture_metadata.json with audio file path, total duration,
-   * and scene start/end times derived from voice timestamps.
-   * This bridges the capture metadata format to what scene-timing-mapper expects.
-   */
-  private async updateMetadataWithVoice(
-    metadataPath: string,
-    audioPath: string,
-    totalDuration: number
-  ): Promise<void> {
-    const raw = await fs.readFile(metadataPath, "utf-8");
-    const metadata = JSON.parse(raw);
-
-    // Read words_timestamps.json to get scene boundaries
-    const tsPath = path.join(path.dirname(metadataPath), "words_timestamps.json");
-    const tsRaw = await fs.readFile(tsPath, "utf-8");
-    const timestamps = JSON.parse(tsRaw);
-
-    // Map scene boundaries from voice timestamps onto capture metadata
-    metadata.audioFile = path.relative(path.dirname(metadataPath), audioPath);
-    metadata.totalDuration = totalDuration;
-    metadata.scenes = metadata.scenes.map((scene: Record<string, unknown>, i: number) => {
-      const boundary = timestamps.scenes?.[i];
-      // Ensure video references point to .mp4 (Phase C converts .webm → .mp4)
-      const rawFile = String(scene.videoFile ?? `scene-${String(i + 1).padStart(2, "0")}.mp4`);
-      const baseName = rawFile.replace(/^scenes\//, "").replace(/\.webm$/, ".mp4");
-      return {
-        ...scene,
-        id: boundary?.id ?? `SCENE:${String(i + 1).padStart(2, "0")}`,
-        videoFile: `scenes/${baseName}`,
-        start: boundary?.start_time ?? 0,
-        end: boundary?.end_time ?? totalDuration,
-      };
-    });
-
-    await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), "utf-8");
-    console.log("[Pipeline] Updated capture_metadata.json with voice timing");
   }
 
   private async createOutputDirs(): Promise<OutputDirs> {

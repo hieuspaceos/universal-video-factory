@@ -1,6 +1,6 @@
-// Scene recorder — executes click plan actions via Playwright in ONE continuous recording.
-// Records a single video of the entire session, with timestamp markers per scene.
-// No per-scene browser restarts = no white flash between scenes.
+// Scene recorder — voice-first: records video timed to narration durations.
+// ONE continuous browser recording. Each scene pauses for exactly the narration duration.
+// Result: video and voice are perfectly synchronized.
 
 import * as fs from "fs/promises";
 import * as path from "path";
@@ -9,13 +9,12 @@ import { chromium } from "playwright";
 import type { PlannedAction } from "../ai-director/types.js";
 import type { BrowserConfig, SceneRecordingResult } from "./types.js";
 import { CursorTracker } from "./cursor-tracker.js";
+import type { SceneDuration } from "../voice/voice-pipeline.js";
 
 // Delay after typing each character for natural typing appearance
 const TYPING_DELAY_MS = 100;
-// Pause after an action completes so the result is visible on screen
-const POST_ACTION_PAUSE_MS = 3000;
-// Minimum visible duration per scene — must be long enough to match narration (~6-7s per scene)
-const MIN_SCENE_DISPLAY_MS = 6000;
+// Minimum buffer after action before scene ends (let result be visible)
+const POST_ACTION_BUFFER_MS = 1000;
 
 export class SceneRecorder {
   private config: BrowserConfig;
@@ -27,16 +26,16 @@ export class SceneRecorder {
   }
 
   /**
-   * Record all scenes in ONE continuous video session.
-   * A single browser context records the entire interaction flow.
-   * Returns per-scene results with timing info; the video is one file
-   * that the pipeline later references as all scenes pointing to the same video.
+   * Record all scenes in ONE continuous video, timed to voice narration.
+   * Each scene lasts max(narrationDuration, actionTime + buffer).
+   * This ensures video and voice are perfectly synchronized.
    */
   async recordAllScenes(
     actions: PlannedAction[],
     url: string,
     scenesDir: string,
-    tempDir: string
+    tempDir: string,
+    sceneDurations?: SceneDuration[]
   ): Promise<SceneRecordingResult[]> {
     await fs.mkdir(scenesDir, { recursive: true });
 
@@ -64,29 +63,41 @@ export class SceneRecorder {
       await cursorTracker.startTracking(page);
       await page.goto(url, { waitUntil: "networkidle", timeout: this.config.pageLoadTimeoutMs });
 
-      // Brief initial pause so the page is visible before any action
-      await page.waitForTimeout(800);
+      // Brief initial pause so page is visible before first action
+      await page.waitForTimeout(500);
 
-      for (const action of actions) {
-        console.log(`[SceneRecorder] Recording scene ${action.sceneIndex}: ${action.description}`);
+      for (let i = 0; i < actions.length; i++) {
+        const action = actions[i];
+        // Get narration duration for this scene (in ms), default 5s if no voice data
+        const narrationMs = sceneDurations?.[i]
+          ? sceneDurations[i].durationSec * 1000
+          : 5000;
+
+        console.log(
+          `[SceneRecorder] Scene ${action.sceneIndex}: ${action.description} ` +
+          `(target: ${(narrationMs / 1000).toFixed(1)}s)`
+        );
         const sceneStart = Date.now();
 
         try {
+          // Execute the action (click, type, press key, etc)
           await this.executeAction(page, action);
           await this.waitForStability(page, action);
-          await page.waitForTimeout(POST_ACTION_PAUSE_MS);
 
-          // Ensure minimum scene duration
-          const elapsed = Date.now() - sceneStart;
-          if (elapsed < MIN_SCENE_DISPLAY_MS) {
-            await page.waitForTimeout(MIN_SCENE_DISPLAY_MS - elapsed);
+          // Calculate remaining time: scene should last at least narrationMs
+          const actionElapsed = Date.now() - sceneStart;
+          const targetMs = Math.max(narrationMs, actionElapsed + POST_ACTION_BUFFER_MS);
+          const remainingMs = targetMs - actionElapsed;
+
+          if (remainingMs > 0) {
+            await page.waitForTimeout(remainingMs);
           }
 
           const durationMs = Date.now() - sceneStart;
-          console.log(`[SceneRecorder] Scene ${String(action.sceneIndex).padStart(2, "0")} recorded (${durationMs}ms)`);
+          console.log(`[SceneRecorder] Scene ${String(action.sceneIndex).padStart(2, "0")} recorded (${(durationMs / 1000).toFixed(1)}s)`);
           results.push({
             sceneIndex: action.sceneIndex,
-            videoPath: "", // filled after video is saved
+            videoPath: "",
             durationMs,
             success: true,
           });
@@ -105,7 +116,6 @@ export class SceneRecorder {
 
       cursorTracker.flushEvents();
     } finally {
-      // Close page + context to flush the video file
       await page.close();
       await context.close();
       await browser.close();
@@ -120,7 +130,6 @@ export class SceneRecorder {
       await fs.rename(path.join(videoDir, videoFile), outputVideoPath);
     }
 
-    // All scenes point to the same continuous video file
     for (const r of results) {
       if (r.success) r.videoPath = outputVideoPath;
     }
@@ -134,8 +143,6 @@ export class SceneRecorder {
   /** Execute action — parses description for click, type, and keyboard actions */
   private async executeAction(page: Page, action: PlannedAction): Promise<void> {
     const desc = action.description.toLowerCase();
-
-    // Skip "no action" scenes (intro/outro/confirmation)
     if (desc.includes("no action") || desc.includes("observe")) return;
 
     for (let attempt = 1; attempt <= this.retryAttempts; attempt++) {
@@ -163,22 +170,18 @@ export class SceneRecorder {
     const desc = action.description;
     const descLower = desc.toLowerCase();
 
-    // Try CSS selector for precise targeting
     const target = action.selector
       ? await page.$(action.selector).catch(() => null)
       : null;
 
-    // Detect typing: "type 'text'", "enter 'text'", "example 'text'"
     const typeMatch = desc.match(/type[^'"]*['"]([^'"]+)['"]/i)
       ?? desc.match(/enter[^'"]*['"]([^'"]+)['"]/i)
       ?? desc.match(/example\s+['"]([^'"]+)['"]/i)
       ?? desc.match(/for example\s+['"]([^'"]+)['"]/i);
 
-    // Detect keyboard press: "press Enter", "press Tab"
     const pressMatch = desc.match(/press\s+(?:the\s+)?(\w+)\s+key/i)
       ?? desc.match(/press\s+(\w+)/i);
 
-    // Click/focus action
     if (descLower.includes("click") || descLower.includes("focus")) {
       if (target) {
         await target.scrollIntoViewIfNeeded();
@@ -195,14 +198,12 @@ export class SceneRecorder {
       }
     }
 
-    // Type text if detected
     if (typeMatch) {
       await page.waitForTimeout(300);
       await page.keyboard.type(typeMatch[1], { delay: TYPING_DELAY_MS });
       await page.waitForTimeout(500);
     }
 
-    // Press key if detected (and not already typing)
     if (pressMatch && !typeMatch) {
       const keyMap: Record<string, string> = {
         enter: "Enter", tab: "Tab", escape: "Escape",
@@ -214,7 +215,6 @@ export class SceneRecorder {
       await page.waitForTimeout(500);
     }
 
-    // Fallback: click at coordinates if no specific action detected
     if (!descLower.includes("click") && !descLower.includes("focus")
         && !typeMatch && !pressMatch) {
       await page.mouse.move(action.x, action.y, { steps: 15 });
