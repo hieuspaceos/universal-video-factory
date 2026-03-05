@@ -49,6 +49,9 @@ export function createServer(port = 3456) {
     },
     (jobId, status, detail) => {
       broadcast({ type: `job:${status}`, jobId, detail });
+    },
+    (jobId, line) => {
+      broadcast({ type: "job:log", jobId, line });
     }
   );
 

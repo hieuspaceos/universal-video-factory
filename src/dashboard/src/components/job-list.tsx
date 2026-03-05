@@ -20,15 +20,23 @@ function relativeTime(iso: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+function EmptyJobList() {
+  return (
+    <div className="empty-job-list">
+      <div className="empty-job-list-icon">📭</div>
+      <p className="empty-job-list-title">No jobs yet</p>
+      <p className="empty-job-list-hint">
+        Click <strong>+ New Job</strong> in the header to submit your first video job.
+      </p>
+    </div>
+  );
+}
+
 export function JobList({ jobs, selectedId, onSelect }: Props) {
   if (jobs.length === 0) {
     return (
       <div className="job-list">
-        <div className="empty-state">
-          <div className="empty-state-icon">📭</div>
-          <p>No jobs yet.</p>
-          <p>Submit one to get started.</p>
-        </div>
+        <EmptyJobList />
       </div>
     );
   }

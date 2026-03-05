@@ -45,12 +45,23 @@ export type WsEventType =
   | "job:progress"
   | "job:completed"
   | "job:failed"
-  | "job:cancelled";
+  | "job:cancelled"
+  | "job:log";
 
-export interface WsEvent {
-  type: WsEventType;
+/** Job-level events that carry the full updated job object */
+export interface WsJobEvent {
+  type: "job:created" | "job:progress" | "job:completed" | "job:failed" | "job:cancelled";
   job: Job;
 }
+
+/** Log line streamed from a running job */
+export interface WsLogEvent {
+  type: "job:log";
+  jobId: string;
+  line: string;
+}
+
+export type WsEvent = WsJobEvent | WsLogEvent;
 
 // Pipeline phase definitions — A through E
 export const PIPELINE_PHASES = [

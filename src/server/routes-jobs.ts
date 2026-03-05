@@ -75,6 +75,23 @@ jobRoutes.delete("/:id", (c) => {
   return c.json({ message: "Job deleted" });
 });
 
+// GET /api/jobs/:id/logs — return accumulated log lines for a job
+jobRoutes.get("/:id/logs", (c) => {
+  const job = getJob(c.req.param("id"));
+  if (!job) return c.json({ error: "Job not found" }, 404);
+
+  // Derive log file path from job working directory convention
+  const logPath = path.resolve("output", c.req.param("id"), "pipeline.log");
+
+  if (!fs.existsSync(logPath)) {
+    return c.json({ lines: [] });
+  }
+
+  const content = fs.readFileSync(logPath, "utf-8");
+  const lines = content.split("\n").filter((l) => l.length > 0);
+  return c.json({ lines });
+});
+
 // GET /api/jobs/:id/output — stream the output video file
 jobRoutes.get("/:id/output", (c) => {
   const job = getJob(c.req.param("id"));
