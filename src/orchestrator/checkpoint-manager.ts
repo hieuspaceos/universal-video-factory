@@ -6,7 +6,7 @@ import * as path from "path";
 const CHECKPOINT_VERSION = 1;
 const CHECKPOINT_FILE = ".checkpoint.json";
 
-export type PipelinePhase = "A" | "B" | "C" | "D" | "E";
+export type PipelinePhase = "A" | "B" | "C" | "C2" | "D" | "E";
 
 export interface PhaseCheckpoint {
   phase: PipelinePhase;
