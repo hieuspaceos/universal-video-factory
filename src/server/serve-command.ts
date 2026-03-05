@@ -2,6 +2,6 @@
 
 import { createServer } from "./index.js";
 
-export function runServe(port: number): void {
-  createServer(port);
+export function runServe(port: number): ReturnType<typeof createServer> {
+  return createServer(port);
 }
