@@ -37,7 +37,34 @@ export function analyzeDwells(events: CursorEvent[]): HighlightMarker[] {
     dwells.push(buildHighlight(moves.slice(clusterStart)));
   }
 
-  return dwells;
+  return mergeOverlappingHighlights(dwells);
+}
+
+/** Merge highlights that overlap in time — combine into one larger region */
+function mergeOverlappingHighlights(highlights: HighlightMarker[]): HighlightMarker[] {
+  if (highlights.length <= 1) return highlights;
+
+  const sorted = [...highlights].sort((a, b) => a.startMs - b.startMs);
+  const merged: HighlightMarker[] = [sorted[0]];
+
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = merged[merged.length - 1];
+    const curr = sorted[i];
+    if (curr.startMs <= prev.endMs) {
+      // Merge: extend time range and expand bounding box
+      prev.endMs = Math.max(prev.endMs, curr.endMs);
+      const newX = Math.min(prev.x, curr.x);
+      const newY = Math.min(prev.y, curr.y);
+      prev.w = Math.max(prev.x + prev.w, curr.x + curr.w) - newX;
+      prev.h = Math.max(prev.y + prev.h, curr.y + curr.h) - newY;
+      prev.x = newX;
+      prev.y = newY;
+    } else {
+      merged.push(curr);
+    }
+  }
+
+  return merged;
 }
 
 /** Build a highlight marker from a cluster of move events */

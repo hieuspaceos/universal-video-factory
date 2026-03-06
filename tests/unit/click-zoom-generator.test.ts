@@ -19,7 +19,7 @@ describe("generateClickZooms", () => {
       endMs: 6500,
       x: 100,
       y: 200,
-      scale: 1.8,
+      scale: 1.5,
     });
   });
 

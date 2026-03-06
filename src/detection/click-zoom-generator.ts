@@ -6,7 +6,7 @@ import type { ZoomMarker, ClickMarker } from "./detection-types.js";
 
 const ZOOM_LEAD_MS = 500;
 const ZOOM_TRAIL_MS = 1500;
-const DEFAULT_SCALE = 1.8;
+const DEFAULT_SCALE = 1.5;
 
 export interface ClickZoomResult {
   zooms: ZoomMarker[];
