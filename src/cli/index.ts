@@ -71,6 +71,16 @@ if (subcommand === "record-clip") {
   const y = yargs(rawArgs);
   registerComposeCommand(y);
   await y.help().parseAsync();
+} else if (subcommand === "record") {
+  const { registerRecordCommand } = await import("./record-command.js");
+  const y = yargs(rawArgs);
+  registerRecordCommand(y);
+  await y.help().parseAsync();
+} else if (subcommand === "generate-script") {
+  const { registerGenerateScriptCommand } = await import("./generate-script-command.js");
+  const y = yargs(rawArgs);
+  registerGenerateScriptCommand(y);
+  await y.help().parseAsync();
 } else if (subcommand === "serve") {
   const serveArgv = await yargs(rawArgs)
     .command("serve", "Start web dashboard server", (y) =>

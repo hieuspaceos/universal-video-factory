@@ -42,6 +42,49 @@ export async function executeAction(
 }
 
 /**
+ * Execute a multi-step action by splitting on ", then " or ". Then " delimiters.
+ * Each step is executed sequentially with a brief pause between steps.
+ * Falls back to single executeAction if no "then" delimiter found.
+ */
+export async function executeMultiStepAction(
+  page: Page,
+  action: ActionTarget,
+  retryAttempts = 2
+): Promise<void> {
+  const steps = splitActionSteps(action.description);
+  if (steps.length <= 1) {
+    return executeAction(page, action, retryAttempts);
+  }
+
+  console.log(`[action-executor] Multi-step action: ${steps.length} steps`);
+  for (let i = 0; i < steps.length; i++) {
+    const stepDesc = steps[i].trim();
+    if (!stepDesc) continue;
+
+    console.log(`[action-executor] Step ${i + 1}/${steps.length}: ${stepDesc}`);
+    const stepAction: ActionTarget = {
+      ...action,
+      description: stepDesc,
+    };
+
+    // Re-resolve click target for each step (DOM may have changed)
+    const resolved = await resolveClickTarget(page, stepAction);
+    if (resolved) {
+      stepAction.x = resolved.x;
+      stepAction.y = resolved.y;
+    }
+
+    await executeAction(page, stepAction, retryAttempts);
+    await page.waitForTimeout(500);
+  }
+}
+
+/** Split action description into steps on "then" boundaries */
+function splitActionSteps(description: string): string[] {
+  return description.split(/[,.]?\s*[Tt]hen\s+/);
+}
+
+/**
  * Smart action execution — interprets the action description to determine
  * what Playwright commands to run (click, type, press keys, etc).
  */

@@ -4,7 +4,7 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import { chromium } from "playwright";
-import { executeAction, waitForStability, resolveClickTarget } from "../capture/action-executor.js";
+import { executeMultiStepAction, waitForStability, resolveClickTarget } from "../capture/action-executor.js";
 import { convertWebmToMp4 } from "../export/ffmpeg-exporter.js";
 
 const POST_ACTION_BUFFER_MS = 2000;
@@ -84,9 +84,9 @@ export async function recordClip(
       actionTarget.y = resolved.y;
     }
 
-    // Execute the action
+    // Execute the action (supports multi-step via "then" splitting)
     console.log(`[clip-recorder] Executing: ${opts.action}`);
-    await executeAction(page, actionTarget, 2);
+    await executeMultiStepAction(page, actionTarget, 2);
     await waitForStability(page, actionTarget);
 
     // Post-action buffer to show the result
