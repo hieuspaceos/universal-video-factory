@@ -7,6 +7,7 @@ import { ClickHighlight } from "../components/click-highlight";
 import { ZoomContainer } from "../components/zoom-container";
 import { IntroSequence } from "../components/intro-sequence";
 import { OutroSequence } from "../components/outro-sequence";
+import { RegionHighlight } from "../components/region-highlight";
 import { ProgressBar } from "../components/progress-bar";
 import { StepCounter } from "../components/step-counter";
 import type { UniversalTemplateProps } from "./props-schema";
@@ -32,6 +33,7 @@ export const UniversalComposition: React.FC<UniversalTemplateProps> = ({
   zoomEvents,
   introDuration,
   outroDuration,
+  highlights = [],
   cta,
   steps,
 }) => {
@@ -125,6 +127,19 @@ export const UniversalComposition: React.FC<UniversalTemplateProps> = ({
               y={click.y}
               startFrame={click.frame}
               size={40}
+            />
+          ))}
+
+          {/* Layer 4b: Region highlights — dwell area overlays */}
+          {highlights.map((h, i) => (
+            <RegionHighlight
+              key={`highlight-${i}-${h.startFrame}`}
+              x={h.x}
+              y={h.y}
+              w={h.w}
+              h={h.h}
+              startFrame={h.startFrame}
+              durationFrames={h.durationFrames}
             />
           ))}
 

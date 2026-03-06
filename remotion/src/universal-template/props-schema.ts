@@ -43,6 +43,16 @@ const ZoomEventSchema = z.object({
   duration: z.number().int().positive(),
 });
 
+// Region highlight (dwell area)
+const HighlightEventSchema = z.object({
+  startFrame: z.number().int().nonnegative(),
+  durationFrames: z.number().int().positive(),
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+});
+
 // Call-to-action for outro
 const CtaSchema = z.object({
   text: z.string(),
@@ -73,6 +83,9 @@ export const UniversalTemplatePropsSchema = z.object({
   outroDuration: z.number().int().nonnegative().default(120),
   cta: CtaSchema.optional(),
 
+  // Region highlights (Phase 4 — dwell areas from markers.json)
+  highlights: z.array(HighlightEventSchema).default([]),
+
   // PiP overlays (Phase 5)
   // steps mirrors scenes but carries display labels; totalScenes = scenes.length
   steps: z.array(StepSchema).default([]),
@@ -85,4 +98,5 @@ export type BrandProps = z.infer<typeof BrandSchema>;
 export type ClickProps = z.infer<typeof ClickSchema>;
 export type ZoomEventProps = z.infer<typeof ZoomEventSchema>;
 export type CtaProps = z.infer<typeof CtaSchema>;
+export type HighlightEventProps = z.infer<typeof HighlightEventSchema>;
 export type StepProps = z.infer<typeof StepSchema>;
