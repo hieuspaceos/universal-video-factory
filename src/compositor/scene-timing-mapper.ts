@@ -54,6 +54,11 @@ export function mapProjectToRenderProps(projectDir: string): RenderInputProps {
     fs.readFileSync(metadataPath, "utf-8")
   );
 
+  // Intro/outro durations (in frames) — content starts after intro.
+  // Word frames, scene frames, clicks, and audio must all be offset by introDuration
+  // so they align with the content region in the composition timeline.
+  const INTRO_FRAMES = 90;  // matches props-schema default introDuration
+
   // Paths are relative to projectDir which is set as Remotion's publicDir.
   // Remotion serves them via http://localhost:PORT/<relative-path>
   const scenes: SceneTiming[] = metadata.scenes.map((s) => ({
@@ -63,10 +68,11 @@ export function mapProjectToRenderProps(projectDir: string): RenderInputProps {
     durationFrames: Math.max(1, secondsToFrames(s.end - s.start)),
   }));
 
+  // Offset word frames by intro duration so subtitles don't appear during intro
   const words: WordFrame[] = (timestamps.words ?? []).map((w) => ({
     word: w.word,
-    startFrame: secondsToFrames(w.start),
-    endFrame: secondsToFrames(w.end),
+    startFrame: secondsToFrames(w.start) + INTRO_FRAMES,
+    endFrame: secondsToFrames(w.end) + INTRO_FRAMES,
   }));
 
   const totalDurationFrames = secondsToFrames(metadata.totalDuration);

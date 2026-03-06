@@ -60,8 +60,9 @@ describe("mapProjectToRenderProps", () => {
 
     expect(props.words).toHaveLength(2);
     expect(props.words[0].word).toBe("Hello");
-    expect(props.words[0].startFrame).toBe(0);
-    expect(props.words[0].endFrame).toBe(15); // 0.5s * 30fps
+    // Word frames offset by introDuration (90 frames)
+    expect(props.words[0].startFrame).toBe(90);
+    expect(props.words[0].endFrame).toBe(105);
   });
 
   it("prefixes video paths with /", () => {

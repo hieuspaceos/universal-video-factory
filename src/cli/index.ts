@@ -53,8 +53,25 @@ function registerPipelineSignalHandlers(): void {
 
 const rawArgs = hideBin(process.argv);
 
-// Handle "serve" subcommand separately — server keeps event loop alive via open socket
-if (rawArgs[0] === "serve") {
+// Handle subcommands that bypass the main pipeline
+const subcommand = rawArgs[0];
+
+if (subcommand === "record-clip") {
+  const { registerRecordClipCommand } = await import("./record-clip-command.js");
+  const y = yargs(rawArgs);
+  registerRecordClipCommand(y);
+  await y.help().parseAsync();
+} else if (subcommand === "clips") {
+  const { registerClipsCommand } = await import("./clips-list-command.js");
+  const y = yargs(rawArgs);
+  registerClipsCommand(y);
+  await y.help().parseAsync();
+} else if (subcommand === "compose") {
+  const { registerComposeCommand } = await import("./compose-command.js");
+  const y = yargs(rawArgs);
+  registerComposeCommand(y);
+  await y.help().parseAsync();
+} else if (subcommand === "serve") {
   const serveArgv = await yargs(rawArgs)
     .command("serve", "Start web dashboard server", (y) =>
       y.option("port", {

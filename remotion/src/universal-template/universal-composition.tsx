@@ -113,6 +113,7 @@ export const UniversalComposition: React.FC<UniversalTemplateProps> = ({
               videoPath={continuousVideoPath}
               width={width}
               height={height}
+              scenes={scenes}
             />
           </ZoomContainer>
 
@@ -130,8 +131,10 @@ export const UniversalComposition: React.FC<UniversalTemplateProps> = ({
         </Sequence>
       )}
 
-      {/* Layer 5: Audio — spans full composition duration */}
-      <AudioLayer audioPath={audioPath} />
+      {/* Layer 5: Audio — starts after intro, spans content + outro */}
+      <Sequence from={contentStart} durationInFrames={durationInFrames - contentStart} name="audio">
+        <AudioLayer audioPath={audioPath} />
+      </Sequence>
 
       {/* Layer 6: Karaoke subtitles — fixed overlay, above everything */}
       <KaraokeSubtitles words={words} width={width} height={height} />
