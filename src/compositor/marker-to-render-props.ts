@@ -6,9 +6,9 @@ import * as path from "path";
 import type { MarkersFile } from "../detection/detection-types.js";
 import { MarkersFileSchema } from "../detection/detection-types.js";
 import type { SceneTiming, WordFrame, ClickEvent, RenderInputProps } from "./types.js";
+import { DEFAULT_INTRO_FRAMES, DEFAULT_OUTRO_FRAMES } from "./types.js";
 
 const FPS = 30;
-const INTRO_FRAMES = 90;
 
 function msToFrames(ms: number): number {
   return Math.round((ms / 1000) * FPS);
@@ -95,16 +95,15 @@ export function mapMarkersToRenderProps(
     const wordsRaw = JSON.parse(fs.readFileSync(wordsPath, "utf-8"));
     words = (wordsRaw.words ?? []).map((w: { word: string; start: number; end: number }) => ({
       word: w.word,
-      startFrame: Math.round(w.start * FPS) + INTRO_FRAMES,
-      endFrame: Math.round(w.end * FPS) + INTRO_FRAMES,
+      startFrame: Math.round(w.start * FPS) + DEFAULT_INTRO_FRAMES,
+      endFrame: Math.round(w.end * FPS) + DEFAULT_INTRO_FRAMES,
     }));
   }
 
   // Total duration = last scene end + outro
   const lastScene = markers.scenes[markers.scenes.length - 1];
   const contentFrames = lastScene ? msToFrames(lastScene.endMs) : 0;
-  const OUTRO_FRAMES = 120;
-  const totalDurationFrames = INTRO_FRAMES + contentFrames + OUTRO_FRAMES;
+  const totalDurationFrames = DEFAULT_INTRO_FRAMES + contentFrames + DEFAULT_OUTRO_FRAMES;
 
   return {
     scenes,

@@ -1,4 +1,8 @@
-// Shared types for the compositor module
+// Shared types and constants for the compositor module
+
+// Default durations (frames at 30fps) — must match remotion/props-schema.ts defaults
+export const DEFAULT_INTRO_FRAMES = 90;  // 3 seconds
+export const DEFAULT_OUTRO_FRAMES = 120; // 4 seconds
 
 export interface SceneTiming {
   id: string;          // e.g. "scene-01"

@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import type { SceneTiming, WordFrame, ClickEvent, RenderInputProps } from "./types.js";
+import { DEFAULT_INTRO_FRAMES, DEFAULT_OUTRO_FRAMES } from "./types.js";
 
 // Shape of words_timestamps.json
 interface WordsTimestampsFile {
@@ -57,7 +58,7 @@ export function mapProjectToRenderProps(projectDir: string): RenderInputProps {
   // Intro/outro durations (in frames) — content starts after intro.
   // Word frames, scene frames, clicks, and audio must all be offset by introDuration
   // so they align with the content region in the composition timeline.
-  const INTRO_FRAMES = 90;  // matches props-schema default introDuration
+  const INTRO_FRAMES = DEFAULT_INTRO_FRAMES;
 
   // Paths are relative to projectDir which is set as Remotion's publicDir.
   // Remotion serves them via http://localhost:PORT/<relative-path>
@@ -76,9 +77,8 @@ export function mapProjectToRenderProps(projectDir: string): RenderInputProps {
   }));
 
   // totalDurationFrames = full video length (intro + content + outro)
-  const OUTRO_FRAMES = 120; // matches props-schema default outroDuration
   const contentFrames = secondsToFrames(metadata.totalDuration);
-  const totalDurationFrames = INTRO_FRAMES + contentFrames + OUTRO_FRAMES;
+  const totalDurationFrames = INTRO_FRAMES + contentFrames + DEFAULT_OUTRO_FRAMES;
   const audioPath = `/${metadata.audioFile}`;
 
   // Generate click events from scene metadata (one click per scene with valid coordinates).
