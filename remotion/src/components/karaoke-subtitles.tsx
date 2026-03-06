@@ -7,6 +7,10 @@ interface KaraokeSubtitlesProps {
   words: WordProps[];
   width: number;
   height: number;
+  /** Hide subtitles before this frame (e.g. intro end) */
+  showAfterFrame?: number;
+  /** Hide subtitles after this frame (e.g. outro start) */
+  hideAfterFrame?: number;
 }
 
 // Number of words to display in the visible subtitle line
@@ -24,10 +28,14 @@ export const KaraokeSubtitles: React.FC<KaraokeSubtitlesProps> = ({
   words,
   width,
   height,
+  showAfterFrame = 0,
+  hideAfterFrame = Infinity,
 }) => {
   const frame = useCurrentFrame();
 
   if (words.length === 0) return null;
+  // Guard: don't show during intro or outro
+  if (frame < showAfterFrame || frame >= hideAfterFrame) return null;
 
   const currentIdx = findCurrentWordIndex(words, frame);
   if (currentIdx < 0) return null;

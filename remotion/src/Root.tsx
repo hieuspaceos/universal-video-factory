@@ -33,6 +33,8 @@ const defaultProps = {
   introDuration: 90,
   outroDuration: 120,
   cta: undefined,
+  // Region highlights (dwell areas)
+  highlights: [],
   // Phase 5 PiP overlays — empty default for Studio preview
   steps: [],
 };

@@ -42,31 +42,31 @@ describe("mapMarkersToRenderProps", () => {
     expect(result.scenes[1].id).toBe("scene-02");
   });
 
-  it("converts click markers to ClickEvent with intro offset", () => {
+  it("converts click markers without intro offset (rendered inside content Sequence)", () => {
     const result = mapMarkersToRenderProps("/test/markers.json", "/video.webm", "/audio.mp3");
     expect(result.clicks).toHaveLength(1);
     expect(result.clicks![0].x).toBe(500);
     expect(result.clicks![0].y).toBe(300);
-    // 1500ms → 45 frames + 90 intro = 135
-    expect(result.clicks![0].frame).toBe(135);
+    // 1500ms → 45 frames (no intro offset — inside content Sequence)
+    expect(result.clicks![0].frame).toBe(45);
     expect(result.clicks![0].duration).toBe(30);
   });
 
-  it("converts zoom markers with intro offset", () => {
+  it("converts zoom markers without intro offset (rendered inside content Sequence)", () => {
     const result = mapMarkersToRenderProps("/test/markers.json", "/video.webm", "/audio.mp3");
     expect(result.zoomEvents).toHaveLength(1);
-    // 1000ms → 30 frames + 90 intro = 120
-    expect(result.zoomEvents[0].frame).toBe(120);
+    // 1000ms → 30 frames (no intro offset)
+    expect(result.zoomEvents[0].frame).toBe(30);
     expect(result.zoomEvents[0].scale).toBe(1.8);
     // duration: 2000ms → 60 frames
     expect(result.zoomEvents[0].duration).toBe(60);
   });
 
-  it("converts highlight markers with intro offset", () => {
+  it("converts highlight markers without intro offset (rendered inside content Sequence)", () => {
     const result = mapMarkersToRenderProps("/test/markers.json", "/video.webm", "/audio.mp3");
     expect(result.highlights).toHaveLength(1);
-    // 6000ms → 180 frames + 90 intro = 270
-    expect(result.highlights[0].startFrame).toBe(270);
+    // 6000ms → 180 frames (no intro offset)
+    expect(result.highlights[0].startFrame).toBe(180);
     expect(result.highlights[0].w).toBe(200);
     expect(result.highlights[0].h).toBe(40);
   });

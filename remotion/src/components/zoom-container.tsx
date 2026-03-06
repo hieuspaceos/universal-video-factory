@@ -1,5 +1,5 @@
 import React from "react";
-import { useCurrentFrame, useVideoConfig, spring } from "remotion";
+import { useCurrentFrame, useVideoConfig, spring, interpolate } from "remotion";
 
 interface ZoomEvent {
   /** Absolute frame when zoom starts */
@@ -21,17 +21,21 @@ interface ZoomContainerProps {
 
 const MAX_SCALE = 2.0;
 const SPRING_CFG = { damping: 20, stiffness: 120 };
+// Frames for zoom-in and zoom-out spring animation
+const TRANSITION_FRAMES = 15;
+// Frames to smoothly pan origin between consecutive zoom events
+const PAN_FRAMES = 20;
 
 /**
  * Wraps scene content with spring-animated zoom keyed to click events.
  *
  * For each zoom event:
- *   - Zoom in  : spring from 1.0 → target scale (frames 0-15 relative)
+ *   - Zoom in  : spring from 1.0 → target scale (15 frames)
  *   - Hold     : maintain target scale for `duration` frames
  *   - Zoom out : spring back to 1.0 (15 frames)
  *
- * CSS transform-origin is set to the click point so the zoom centers
- * on the area of interest.
+ * When consecutive zoom events overlap or are close together,
+ * the focus point smoothly pans between them instead of snapping.
  */
 export const ZoomContainer: React.FC<ZoomContainerProps> = ({
   zoomEvents,
@@ -44,49 +48,65 @@ export const ZoomContainer: React.FC<ZoomContainerProps> = ({
   let currentScale = 1.0;
   let originX = width / 2;
   let originY = height / 2;
+  let activeEventIdx = -1;
 
-  for (const event of zoomEvents) {
+  for (let i = 0; i < zoomEvents.length; i++) {
+    const event = zoomEvents[i];
     const targetScale = Math.min(event.scale, MAX_SCALE);
-    const zoomInEnd = event.frame + 15;
+    const zoomInEnd = event.frame + TRANSITION_FRAMES;
     const holdEnd = zoomInEnd + event.duration;
-    const zoomOutEnd = holdEnd + 15;
+    const zoomOutEnd = holdEnd + TRANSITION_FRAMES;
 
     if (frame < event.frame || frame > zoomOutEnd) continue;
 
     const relFrame = frame - event.frame;
 
     let scale: number;
-    if (relFrame <= 15) {
+    if (relFrame <= TRANSITION_FRAMES) {
       // Zoom in phase
       const progress = spring({
         fps,
         frame: relFrame,
         config: SPRING_CFG,
-        durationInFrames: 15,
+        durationInFrames: TRANSITION_FRAMES,
       });
       scale = 1.0 + (targetScale - 1.0) * progress;
-    } else if (relFrame <= 15 + event.duration) {
+    } else if (relFrame <= TRANSITION_FRAMES + event.duration) {
       // Hold phase
       scale = targetScale;
     } else {
       // Zoom out phase
-      const outFrame = relFrame - (15 + event.duration);
+      const outFrame = relFrame - (TRANSITION_FRAMES + event.duration);
       const progress = spring({
         fps,
         frame: outFrame,
         config: SPRING_CFG,
-        durationInFrames: 15,
+        durationInFrames: TRANSITION_FRAMES,
       });
       scale = targetScale - (targetScale - 1.0) * progress;
     }
 
-    // Last active event wins for origin
     currentScale = scale;
-    originX = event.x;
-    originY = event.y;
+    activeEventIdx = i;
+
+    // Smooth pan: interpolate origin from previous event's focus point
+    if (i > 0) {
+      const prevEvent = zoomEvents[i - 1];
+      const panStart = event.frame;
+      const panEnd = event.frame + PAN_FRAMES;
+      const panProgress = interpolate(frame, [panStart, panEnd], [0, 1], {
+        extrapolateLeft: "clamp",
+        extrapolateRight: "clamp",
+      });
+      originX = prevEvent.x + (event.x - prevEvent.x) * panProgress;
+      originY = prevEvent.y + (event.y - prevEvent.y) * panProgress;
+    } else {
+      originX = event.x;
+      originY = event.y;
+    }
   }
 
-  // Translate so zoom origin stays visually anchored at click point
+  // Translate so zoom origin stays visually anchored at focus point
   const tx = (width / 2 - originX) * (currentScale - 1);
   const ty = (height / 2 - originY) * (currentScale - 1);
 

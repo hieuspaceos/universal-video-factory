@@ -1,6 +1,5 @@
 import React from "react";
-import { Sequence } from "remotion";
-import { ScreenClip } from "../components/screen-clip";
+import { Sequence, OffthreadVideo } from "remotion";
 import type { SceneProps } from "./props-schema";
 
 interface SceneSequencerProps {
@@ -12,14 +11,19 @@ interface SceneSequencerProps {
 /**
  * Sequences scene clips back-to-back using Remotion <Sequence>.
  * Each scene is placed at its startFrame with its durationFrames.
- * Gaps between scenes show a black background (no freeze frame needed
- * since OffthreadVideo handles its own last-frame behavior).
+ * Used for multi-clip mode where each scene has its own video file.
  */
 export const SceneSequencer: React.FC<SceneSequencerProps> = ({
   scenes,
   width,
   height,
 }) => {
+  const videoStyle: React.CSSProperties = {
+    width: "100%",
+    height: "100%",
+    objectFit: "contain",
+  };
+
   return (
     <>
       {scenes.map((scene) => (
@@ -29,7 +33,7 @@ export const SceneSequencer: React.FC<SceneSequencerProps> = ({
           durationInFrames={scene.durationFrames}
           name={scene.id}
         >
-          <ScreenClip scene={scene} width={width} height={height} />
+          <OffthreadVideo src={scene.videoPath} style={videoStyle} />
         </Sequence>
       ))}
     </>

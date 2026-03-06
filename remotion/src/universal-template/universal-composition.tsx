@@ -39,33 +39,43 @@ export const UniversalComposition: React.FC<UniversalTemplateProps> = ({
 }) => {
   const { width, height, durationInFrames } = useVideoConfig();
 
-  // Auto-generate a SINGLE zoom event spanning all action scenes.
-  // Scene 0 = intro/overview (no zoom). Zoom in at scene 1, hold through all
-  // remaining action scenes, zoom out at the last scene's end.
+  // Auto-generate per-scene zoom events centered on each scene's clicks.
+  // Falls back to marker-provided zoom events when available.
   const effectiveZoomEvents = (() => {
     if (zoomEvents.length > 0) return zoomEvents;
     if (scenes.length < 2 || clicks.length === 0) return [];
 
-    // First action scene (skip scene 0 = overview/intro)
-    const firstAction = scenes[1] ?? scenes[0];
-    const lastScene = scenes[scenes.length - 1];
-    const zoomStart = firstAction.startFrame;
-    const zoomEnd = lastScene.startFrame + lastScene.durationFrames;
-    // Hold = total span minus 15f zoom-in and 15f zoom-out
-    const holdDuration = Math.max(1, zoomEnd - zoomStart - 30);
+    // Group clicks by scene (skip scene 0 = overview/intro)
+    const actionScenes = scenes.slice(1);
+    const generated: typeof zoomEvents = [];
 
-    // Use first click's position as zoom focus point
-    const focusClick = clicks[0];
+    for (const scene of actionScenes) {
+      const sceneEnd = scene.startFrame + scene.durationFrames;
+      const sceneClicks = clicks.filter(
+        (c) => c.frame >= scene.startFrame && c.frame < sceneEnd
+      );
+      if (sceneClicks.length === 0) continue;
 
-    return [
-      {
-        frame: zoomStart,
-        x: focusClick.x,
-        y: focusClick.y,
+      // Average click position as focus point for this scene
+      const avgX = Math.round(
+        sceneClicks.reduce((sum, c) => sum + c.x, 0) / sceneClicks.length
+      );
+      const avgY = Math.round(
+        sceneClicks.reduce((sum, c) => sum + c.y, 0) / sceneClicks.length
+      );
+      // Hold for scene duration minus zoom-in/out transitions (15f each)
+      const holdDuration = Math.max(1, scene.durationFrames - 30);
+
+      generated.push({
+        frame: scene.startFrame,
+        x: avgX,
+        y: avgY,
         scale: 1.35,
         duration: holdDuration,
-      },
-    ];
+      });
+    }
+
+    return generated;
   })();
 
   // Duration of the main content window (between intro and outro)
@@ -151,8 +161,14 @@ export const UniversalComposition: React.FC<UniversalTemplateProps> = ({
         <AudioLayer audioPath={audioPath} />
       </Sequence>
 
-      {/* Layer 6: Karaoke subtitles — fixed overlay, above everything */}
-      <KaraokeSubtitles words={words} width={width} height={height} />
+      {/* Layer 6: Karaoke subtitles — fixed overlay, visible only during content */}
+      <KaraokeSubtitles
+        words={words}
+        width={width}
+        height={height}
+        showAfterFrame={contentStart}
+        hideAfterFrame={contentEnd}
+      />
 
       {/* Layer 7: PiP overlays — progress bar + step counter (content region only) */}
       {scenes.length > 0 && contentDuration > 0 && (

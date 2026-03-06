@@ -54,32 +54,34 @@ export function mapMarkersToRenderProps(
     durationFrames: Math.max(1, msToFrames(s.endMs - s.startMs)),
   }));
 
-  // Click markers → ClickEvent props (offset by intro)
+  // Click markers → ClickEvent props
+  // No intro offset — these render inside <Sequence from={introDuration}>,
+  // so useCurrentFrame() is already relative to content start
   const clicks: ClickEvent[] = markers.markers
     .filter((m) => m.type === "click")
     .map((m) => ({
       x: m.x,
       y: m.y,
-      frame: msToFrames(m.ms) + INTRO_FRAMES,
+      frame: msToFrames(m.ms),
       duration: 30,
     }));
 
-  // Zoom markers → ZoomEvent props (offset by intro)
+  // Zoom markers → ZoomEvent props (no intro offset — inside content Sequence)
   const zoomEvents: MarkerZoomEvent[] = markers.markers
     .filter((m) => m.type === "zoom")
     .map((m) => ({
-      frame: msToFrames(m.startMs) + INTRO_FRAMES,
+      frame: msToFrames(m.startMs),
       x: m.x,
       y: m.y,
       scale: m.scale,
       duration: Math.max(1, msToFrames(m.endMs - m.startMs)),
     }));
 
-  // Highlight markers → frame-based (offset by intro)
+  // Highlight markers → frame-based (no intro offset — inside content Sequence)
   const highlights: MarkerHighlightEvent[] = markers.markers
     .filter((m) => m.type === "highlight")
     .map((m) => ({
-      startFrame: msToFrames(m.startMs) + INTRO_FRAMES,
+      startFrame: msToFrames(m.startMs),
       durationFrames: Math.max(1, msToFrames(m.endMs - m.startMs)),
       x: m.x,
       y: m.y,
