@@ -33,8 +33,8 @@ import { createLogger } from "../utils/logger.js";
 const log = createLogger("render-engine");
 
 /** Below this → concurrency=1. Below CRITICAL → abort render. */
-const LOW_RAM_MB = 2048;
-const CRITICAL_RAM_MB = 512;
+const LOW_RAM_MB = 1024;
+const CRITICAL_RAM_MB = 256;
 /** How often to check RAM during render (ms) */
 const RAM_CHECK_INTERVAL_MS = 3000;
 
@@ -220,9 +220,11 @@ export async function renderVideoWithProps(options: {
   concurrency?: number;
   /** Render at 720p for faster preview with lower RAM usage */
   preview?: boolean;
+  /** Output quality: "1080p" (default), "1440p", "4k" */
+  quality?: "1080p" | "1440p" | "4k";
   onProgress?: (progress: number) => void;
 }): Promise<RenderResult> {
-  const { projectDir, outputPath, inputProps, codec = "h264", concurrency = 2, preview, onProgress } = options;
+  const { projectDir, outputPath, inputProps, codec = "h264", concurrency = 2, preview, quality, onProgress } = options;
   const startMs = Date.now();
 
   log.info("Bundling Remotion composition...");
@@ -243,9 +245,11 @@ export async function renderVideoWithProps(options: {
   });
 
   const actualConcurrency = await safeConcurrency(concurrency);
-  // Preview mode: scale down to 720p (0.667x of 1080p) for lower RAM usage
-  const scale = preview ? 720 / 1080 : undefined;
+  // Scale: preview (720p) < 1080p (default) < 1440p < 4k
+  const qualityScales: Record<string, number> = { "1440p": 1440 / 1080, "4k": 2160 / 1080 };
+  const scale = preview ? 720 / 1080 : quality ? qualityScales[quality] : undefined;
   if (preview) log.info("Preview mode: rendering at 720p");
+  if (quality && quality !== "1080p") log.info(`Quality: ${quality} (scale ${scale?.toFixed(2)})`);
   log.info(`Rendering ${composition.durationInFrames} frames at ${composition.fps}fps`);
 
   const { cancel: cancel2, cancelSignal: cancelSignal2 } = makeCancelSignal();

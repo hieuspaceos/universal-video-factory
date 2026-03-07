@@ -49,6 +49,12 @@ export function registerTutorialCommand(yargs: Argv): void {
           type: "boolean",
           description: "Render at 720p for faster preview with lower RAM",
           default: false,
+        })
+        .option("quality", {
+          type: "string",
+          description: "Output quality: 1080p (default), 1440p, 4k",
+          choices: ["1080p", "1440p", "4k"],
+          default: "1080p",
         }),
     async (argv) => {
       const result = await runTutorialPipeline({
@@ -60,6 +66,7 @@ export function registerTutorialCommand(yargs: Argv): void {
         treeId: argv["tree-id"] as string | undefined,
         treeIdSource: argv["tree-id-source"] as string | undefined,
         preview: argv.preview as boolean,
+        quality: argv.quality as "1080p" | "1440p" | "4k",
       });
       console.log(`\nTutorial complete!`);
       console.log(`  Video: ${result.finalVideoPath}`);

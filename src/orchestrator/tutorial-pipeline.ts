@@ -33,6 +33,8 @@ export interface TutorialPipelineOptions {
   resume?: boolean;
   /** Render at 720p for faster preview with lower RAM */
   preview?: boolean;
+  /** Output quality: "1080p" (default), "1440p", "4k" */
+  quality?: "1080p" | "1440p" | "4k";
   /** tree-id node ID — fetches content to enrich script generation */
   treeId?: string;
   /** tree-id source (API URL or local JSON path) */
@@ -187,6 +189,7 @@ export async function runTutorialPipeline(
       outputPath: rawVideoPath,
       inputProps: renderProps as unknown as Record<string, unknown>,
       preview: opts.preview,
+      quality: opts.quality,
     });
 
     await exportFinalVideo(rawVideoPath, finalVideoPath);
