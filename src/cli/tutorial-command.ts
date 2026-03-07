@@ -55,8 +55,21 @@ export function registerTutorialCommand(yargs: Argv): void {
           description: "Output quality: 1080p (default), 1440p, 4k",
           choices: ["1080p", "1440p", "4k"],
           default: "1080p",
+        })
+        .option("skip-ram-check", {
+          type: "boolean",
+          description: "Skip RAM safety check before rendering",
+          default: false,
+        })
+        .option("skip-render", {
+          type: "boolean",
+          description: "Stop after recording + detection, skip voice and render",
+          default: false,
         }),
     async (argv) => {
+      if (argv["skip-ram-check"]) {
+        process.env["VF_SKIP_RAM_CHECK"] = "1";
+      }
       const result = await runTutorialPipeline({
         url: (argv.url as string) ?? "",
         purpose: (argv.purpose as string) ?? "",
@@ -67,6 +80,7 @@ export function registerTutorialCommand(yargs: Argv): void {
         treeIdSource: argv["tree-id-source"] as string | undefined,
         preview: argv.preview as boolean,
         quality: argv.quality as "1080p" | "1440p" | "4k",
+        skipRender: argv["skip-render"] as boolean,
       });
       console.log(`\nTutorial complete!`);
       console.log(`  Video: ${result.finalVideoPath}`);

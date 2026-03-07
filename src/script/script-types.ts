@@ -11,6 +11,8 @@ export const ScriptStepSchema = z.object({
   narration: z.string().min(1),
   /** Expected duration for this step in seconds */
   expectedDurationSec: z.number().positive(),
+  /** Text to paste into input field — press C in terminal to copy to clipboard */
+  pasteText: z.string().optional(),
 });
 
 export const TutorialScriptSchema = z.object({

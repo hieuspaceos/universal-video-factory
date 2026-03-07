@@ -54,7 +54,7 @@ export function createInstructionDisplay(script: TutorialScript): InstructionDis
 
     lines.push("");
     lines.push("──────────────────────────────────────────────────");
-    lines.push("  \x1b[2m[Space] next step    [Esc] stop recording\x1b[0m");
+    lines.push("  \x1b[2m[`] next step    [Esc] stop recording\x1b[0m");
     lines.push("──────────────────────────────────────────────────");
 
     fs.writeFileSync(INSTRUCTION_LOG_PATH, lines.join("\n") + "\n", "utf-8");

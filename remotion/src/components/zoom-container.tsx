@@ -126,21 +126,29 @@ export const ZoomContainer: React.FC<ZoomContainerProps> = ({
       }
     }
 
-    // Determine focus point — follow cursor trail smoothly when available
-    if (cursorTrail.length >= 2) {
-      // Interpolate between nearest cursor trail samples
-      const pos = interpolateCursorPosition(cursorTrail, frame);
-      originX = pos.x;
-      originY = pos.y;
-    } else {
-      // Fallback: snap between zoom event positions
-      for (let i = zoomEvents.length - 1; i >= 0; i--) {
-        if (frame >= zoomEvents[i].frame) {
-          originX = zoomEvents[i].x;
-          originY = zoomEvents[i].y;
-          break;
-        }
+    // Determine focus point — anchor at click positions, smooth pan between them
+    // Find the two nearest zoom events to smoothly pan between click positions
+    let prevEvent = firstEvent;
+    let nextEvent: ZoomEvent | null = null;
+    for (let i = 0; i < zoomEvents.length; i++) {
+      if (frame >= zoomEvents[i].frame) {
+        prevEvent = zoomEvents[i];
+        nextEvent = i + 1 < zoomEvents.length ? zoomEvents[i + 1] : null;
       }
+    }
+
+    if (nextEvent && frame >= prevEvent.frame + prevEvent.duration) {
+      // Between events: smooth pan from prev click to next click
+      const panStart = prevEvent.frame + prevEvent.duration;
+      const panEnd = Math.min(panStart + PAN_FRAMES, nextEvent.frame);
+      const t = panEnd === panStart ? 1 : Math.min(1, (frame - panStart) / (panEnd - panStart));
+      const smoothT = t * t * (3 - 2 * t); // smoothstep
+      originX = prevEvent.x + (nextEvent.x - prevEvent.x) * smoothT;
+      originY = prevEvent.y + (nextEvent.y - prevEvent.y) * smoothT;
+    } else {
+      // During event hold or before next: stay at current click position
+      originX = prevEvent.x;
+      originY = prevEvent.y;
     }
   }
 

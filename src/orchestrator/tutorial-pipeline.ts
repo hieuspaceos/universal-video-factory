@@ -39,6 +39,8 @@ export interface TutorialPipelineOptions {
   treeId?: string;
   /** tree-id source (API URL or local JSON path) */
   treeIdSource?: string;
+  /** Stop after recording + detection, skip voice + render */
+  skipRender?: boolean;
 }
 
 export interface TutorialPipelineResult {
@@ -120,7 +122,7 @@ export async function runTutorialPipeline(
     const vp = opts.quality ? viewportSizes[opts.quality] : undefined;
     log.info("Step 2/5: Recording screen (human-assisted)...");
     if (vp) log.info(`Recording at ${vp.w}x${vp.h} (${opts.quality})`);
-    log.info("Press SPACE to advance steps, ESC to stop recording.");
+    log.info("Press ` (backtick) to advance steps, ESC to stop recording.");
     const recording = await recordHumanSession({
       url, script, outputDir,
       viewportWidth: vp?.w,
@@ -149,6 +151,12 @@ export async function runTutorialPipeline(
     log.info(`${markers.markers.length} markers (${zoomCount} zooms)`);
   } else {
     log.info("Step 3/5: skipped (checkpoint)");
+  }
+
+  // Early exit if --skip-render
+  if (opts.skipRender) {
+    log.info("Skipping voice + render (--skip-render). Recording saved.");
+    return { scriptPath, recordingDir: outputDir, markersPath, finalVideoPath: "" };
   }
 
   // Step 4: Voice TTS (generate narration from script)

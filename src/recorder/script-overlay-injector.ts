@@ -1,5 +1,5 @@
 // Script overlay — injects invisible keyboard listener into the page for scene tracking
-// Human reads instructions from terminal, presses Space to advance, Esc to stop recording
+// Human reads instructions from terminal, presses ` (backtick) to advance, Esc to stop recording
 // No visible overlay in Chrome → clean recording without UI artifacts
 
 import type { Page } from "playwright";
@@ -22,7 +22,7 @@ export async function injectScriptOverlay(
     window.__vf_total_steps = ${totalSteps};
 
     document.addEventListener("keydown", function(e) {
-      if (e.code === "Space" && e.target === document.body) {
+      if (e.code === "Backquote") {
         e.preventDefault();
         var idx = window.__vf_current_step;
         window.__vf_scene_marks.push({ step: idx + 2, ms: Date.now() - (window.__vf_startTime || Date.now()) });

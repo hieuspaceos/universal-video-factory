@@ -6,7 +6,7 @@ import * as path from "path";
 import { chromium } from "playwright";
 import { convertWebmToMp4 } from "../export/ffmpeg-exporter.js";
 import { injectEventTrackers, flushEvents, reinjectAfterNavigation } from "./event-tracker.js";
-import { injectScriptOverlay, isRecordingDone, getSceneMarks } from "./script-overlay-injector.js";
+import { injectScriptOverlay, isRecordingDone, getSceneMarks, getCurrentStep } from "./script-overlay-injector.js";
 import * as readline from "readline";
 import type { TutorialScript } from "../script/script-types.js";
 import type { RecordingSession, RecordingResult, CursorEvent, SceneMarker } from "./recorder-types.js";
@@ -53,7 +53,7 @@ export async function recordHumanSession(opts: HumanRecorderOptions): Promise<Re
     log.info(`  ${step.step}. ${step.instruction}  (~${step.expectedDurationSec}s)`);
   }
   log.info("─".repeat(55));
-  log.info("Press Esc in browser when done. Space = mark step boundary.");
+  log.info("Press Esc in browser when done. ` (backtick) = mark step boundary.");
   log.info("");
 
   // Wait for user to be ready
@@ -101,8 +101,16 @@ export async function recordHumanSession(opts: HumanRecorderOptions): Promise<Re
       } catch { /* page may be transitioning */ }
     });
 
-    // Periodic event flush + done check loop
-    log.info("Recording... Press Esc in browser when done.");
+    // Live terminal display during recording — only redraw on changes
+    let lastStep = 0;
+    let stepStartTime = Date.now();
+    let lastDisplayedSec = -1;
+
+    // Switch to alternate screen for clean live display
+    const recordingStartTime = Date.now();
+    enterAltScreen();
+    printStepDisplay(opts.script, 0, 0, false, 0);
+
     while (true) {
       await page.waitForTimeout(POLL_INTERVAL_MS);
 
@@ -110,8 +118,28 @@ export async function recordHumanSession(opts: HumanRecorderOptions): Promise<Re
       const batch = await flushEvents(page);
       allEvents.push(...batch);
 
+      const totalElapsed = Math.round((Date.now() - recordingStartTime) / 1000);
+
+      // Check step advancement via backtick key
+      const currentStep = await getCurrentStep(page);
+      const justAdvanced = currentStep > lastStep;
+      if (justAdvanced) {
+        lastStep = currentStep;
+        stepStartTime = Date.now();
+        lastDisplayedSec = -1;
+        printStepDisplay(opts.script, lastStep, 0, true, totalElapsed);
+      }
+
+      // Only redraw when timer second changes
+      const elapsed = Math.round((Date.now() - stepStartTime) / 1000);
+      if (!justAdvanced && elapsed !== lastDisplayedSec) {
+        lastDisplayedSec = elapsed;
+        printStepDisplay(opts.script, lastStep, elapsed, false, totalElapsed);
+      }
+
       // Check if human pressed Esc
       if (await isRecordingDone(page)) {
+        leaveAltScreen();
         log.info("Recording stopped by user.");
         break;
       }
@@ -169,6 +197,64 @@ export async function recordHumanSession(opts: HumanRecorderOptions): Promise<Re
       sceneCount: scenes.length,
     };
   }
+}
+
+/** Enter alternate screen buffer for clean live display */
+function enterAltScreen(): void {
+  process.stderr.write("\x1b[?1049h\x1b[H");
+}
+
+/** Leave alternate screen buffer, restoring previous terminal content */
+function leaveAltScreen(): void {
+  process.stderr.write("\x1b[?1049l");
+}
+
+/** Render live step display on alternate screen — cursor reset to top each time */
+function printStepDisplay(
+  script: TutorialScript,
+  stepIdx: number,
+  elapsedSec: number,
+  justAdvanced: boolean,
+  totalElapsedSec?: number,
+): void {
+  const steps = script.steps;
+  const total = steps.length;
+
+  // Move cursor to top-left, then write content
+  let out = "\x1b[H\x1b[J"; // cursor home + clear from cursor to end
+
+  out += "══════════════════════════════════════════════════════\n";
+
+  if (justAdvanced && stepIdx > 0 && stepIdx <= total) {
+    const doneName = steps[stepIdx - 1]?.instruction ?? "";
+    out += `  \x1b[42m\x1b[30m\x1b[1m ✓ STEP ${stepIdx}/${total} DONE \x1b[0m ${doneName}\n`;
+  } else {
+    out += "              🎬 RECORDING IN PROGRESS\n";
+  }
+
+  out += "══════════════════════════════════════════════════════\n\n";
+
+  if (stepIdx >= total) {
+    out += `  \x1b[38;5;114m\x1b[1m✓ All ${total} steps complete!\x1b[0m\n\n`;
+    out += "  Press \x1b[1mEsc\x1b[0m in browser to stop recording.\n";
+  } else {
+    const step = steps[stepIdx]!;
+    const totalStr = totalElapsedSec != null ? `  \x1b[2mTotal: ${totalElapsedSec}s\x1b[0m` : "";
+
+    out += `  \x1b[38;5;75m\x1b[1mStep ${stepIdx + 1} / ${total}\x1b[0m  \x1b[33m${elapsedSec}s\x1b[0m${totalStr}\n\n`;
+    out += `  \x1b[1m→ ${step.instruction}\x1b[0m\n\n`;
+
+    const next = stepIdx + 1 < total ? steps[stepIdx + 1] : null;
+    if (next) {
+      out += `  \x1b[2mNext: ${next.instruction}\x1b[0m\n`;
+    }
+  }
+
+  out += "\n──────────────────────────────────────────────────────\n";
+  out += "  \x1b[1m[`]\x1b[0m next step    \x1b[1m[Esc]\x1b[0m stop recording\n";
+  out += "──────────────────────────────────────────────────────\n";
+
+  process.stderr.write(out);
 }
 
 /** Convert raw scene marks (step + ms) into SceneMarker array with start/end */

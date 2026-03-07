@@ -80,6 +80,7 @@ ${contentSection}
 - Each step must be a single, clear action the human can follow while screen recording
 - "instruction" = what the human should DO (action-oriented, imperative: "Click...", "Type...", "Navigate...")
 - "narration" = what the VIEWER hears as voiceover (natural, explanatory, ${lang} language)
+- For steps that involve typing text: make narration longer (2-3 sentences) to cover the typing time. Explain WHY the user is doing this, not just WHAT.
 - Keep steps atomic: one click/type/scroll per step when possible
 - Include expected duration per step in seconds (how long this action takes to perform + settle)
 - 3-10 steps total for a 1-3 minute tutorial
