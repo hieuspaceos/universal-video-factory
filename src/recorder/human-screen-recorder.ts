@@ -113,6 +113,11 @@ export async function recordHumanSession(opts: HumanRecorderOptions): Promise<Re
     const recordingStartTime = Date.now();
     enterAltScreen();
     const sceneDurs = opts.sceneDurationsSec;
+    if (sceneDurs && sceneDurs.length > 0) {
+      log.info(`Typewriter pacing from TTS: [${sceneDurs.map((d) => d.toFixed(1) + "s").join(", ")}]`);
+    } else {
+      log.info("No TTS durations — typewriter using expectedDurationSec fallback");
+    }
     printStepDisplay(opts.script, 0, 0, false, 0, sceneDurs);
 
     while (true) {
