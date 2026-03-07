@@ -6,8 +6,8 @@ import * as path from "path";
 import { chromium } from "playwright";
 import { convertWebmToMp4 } from "../export/ffmpeg-exporter.js";
 import { injectEventTrackers, flushEvents, reinjectAfterNavigation } from "./event-tracker.js";
-import { injectScriptOverlay, isRecordingDone, getSceneMarks, getCurrentStep } from "./script-overlay-injector.js";
-import { createInstructionDisplay } from "./instruction-window.js";
+import { injectScriptOverlay, isRecordingDone, getSceneMarks } from "./script-overlay-injector.js";
+import * as readline from "readline";
 import type { TutorialScript } from "../script/script-types.js";
 import type { RecordingSession, RecordingResult, CursorEvent, SceneMarker } from "./recorder-types.js";
 import { createLogger } from "../utils/logger.js";
@@ -38,8 +38,27 @@ export async function recordHumanSession(opts: HumanRecorderOptions): Promise<Re
   const videoDir = path.join(opts.outputDir, "raw-recording");
   fs.mkdirSync(videoDir, { recursive: true });
 
+  // Print script as a checklist before recording starts
+  log.info("─".repeat(55));
+  log.info("SCRIPT — read through, then perform in order:");
+  log.info("─".repeat(55));
+  for (const step of opts.script.steps) {
+    log.info(`  ${step.step}. ${step.instruction}  (~${step.expectedDurationSec}s)`);
+  }
+  log.info("─".repeat(55));
+  log.info("Press Esc in browser when done. Space = mark step boundary.");
+  log.info("");
+
+  // Wait for user to be ready
+  await new Promise<void>((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+    rl.question("Press Enter when ready to start recording... ", () => {
+      rl.close();
+      resolve();
+    });
+  });
+
   log.info(`Launching browser (${width}x${height})`);
-  log.info("Follow the script overlay. Press Space=next step, Esc=stop.");
 
   const browser = await chromium.launch({ headless: false });
   const context = await browser.newContext({
@@ -67,9 +86,6 @@ export async function recordHumanSession(opts: HumanRecorderOptions): Promise<Re
     await injectEventTrackers(page);
     await injectScriptOverlay(page, opts.script);
 
-    // Show instructions in terminal (zero RAM, no extra browser)
-    const instrDisplay = createInstructionDisplay(opts.script);
-
     // Re-inject trackers after navigation
     page.on("load", async () => {
       await reinjectAfterNavigation(page);
@@ -79,13 +95,9 @@ export async function recordHumanSession(opts: HumanRecorderOptions): Promise<Re
     });
 
     // Periodic event flush + done check loop
-    log.info("Recording started. Follow instructions below. Space=next, Esc=stop.");
+    log.info("Recording... Press Esc in browser when done.");
     while (true) {
       await page.waitForTimeout(POLL_INTERVAL_MS);
-
-      // Sync step changes to terminal display
-      const currentStep = await getCurrentStep(page);
-      instrDisplay.updateStep(currentStep);
 
       // Flush events from page
       const batch = await flushEvents(page);
@@ -93,7 +105,6 @@ export async function recordHumanSession(opts: HumanRecorderOptions): Promise<Re
 
       // Check if human pressed Esc
       if (await isRecordingDone(page)) {
-        instrDisplay.clear();
         log.info("Recording stopped by user.");
         break;
       }

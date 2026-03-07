@@ -1,19 +1,14 @@
-// Terminal-based instruction display — shows step instructions in the terminal
-// Updates in-place using ANSI escape codes. Zero additional RAM (no extra browser).
-// Human positions terminal next to browser window during recording.
+// Terminal-based instruction display — shows step instructions in a separate terminal
+// Writes to a log file that can be tailed from another terminal window.
+// Also writes to stderr for inline display. Zero additional RAM.
 
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import type { TutorialScript } from "../script/script-types.js";
 
-const BLUE = "\x1b[38;5;75m";
-const GREEN = "\x1b[38;5;114m";
-const DIM = "\x1b[2m";
-const BOLD = "\x1b[1m";
-const RESET = "\x1b[0m";
-const CLEAR_LINE = "\x1b[2K";
-const MOVE_UP = "\x1b[A";
-
-/** Number of terminal lines the instruction box occupies */
-const BOX_LINES = 8;
+/** Path where instructions are written for external terminal to tail */
+export const INSTRUCTION_LOG_PATH = path.join(os.tmpdir(), "vf-instructions.log");
 
 export interface InstructionDisplay {
   /** Update the displayed step */
@@ -26,56 +21,56 @@ export interface InstructionDisplay {
 export function createInstructionDisplay(script: TutorialScript): InstructionDisplay {
   const steps = script.steps;
   let lastStep = -1;
-  let linesDrawn = 0;
 
-  function draw(stepIdx: number) {
-    // Erase previous box
-    if (linesDrawn > 0) {
-      for (let i = 0; i < linesDrawn; i++) {
-        process.stderr.write(`${MOVE_UP}${CLEAR_LINE}\r`);
-      }
-    }
+  // Initialize log file
+  fs.writeFileSync(INSTRUCTION_LOG_PATH, "", "utf-8");
 
+  function writeToLog(stepIdx: number) {
     const lines: string[] = [];
-    lines.push(`${DIM}${"─".repeat(50)}${RESET}`);
+    lines.push("\x1b[2J\x1b[H"); // Clear screen + move cursor to top
+    lines.push("══════════════════════════════════════════════════");
+    lines.push("            RECORDING INSTRUCTIONS");
+    lines.push("══════════════════════════════════════════════════");
+    lines.push("");
 
     if (stepIdx >= steps.length) {
-      lines.push(`  ${GREEN}${BOLD}All steps complete!${RESET}`);
-      lines.push(`  ${DIM}Press Esc in browser to stop recording${RESET}`);
+      lines.push("  \x1b[38;5;114m\x1b[1m✓ All steps complete!\x1b[0m");
+      lines.push("");
+      lines.push("  Press \x1b[1mEsc\x1b[0m in browser to stop recording.");
     } else {
       const step = steps[stepIdx]!;
-      lines.push(`  ${BLUE}${BOLD}Step ${step.step}/${steps.length}${RESET}  ${DIM}~${step.expectedDurationSec}s${RESET}`);
-      lines.push(`  ${BOLD}${step.instruction}${RESET}`);
+      lines.push(`  \x1b[38;5;75m\x1b[1mStep ${step.step} / ${steps.length}\x1b[0m  \x1b[2m(~${step.expectedDurationSec}s)\x1b[0m`);
+      lines.push("");
+      lines.push(`  \x1b[1m→ ${step.instruction}\x1b[0m`);
+      lines.push("");
+      lines.push(`  \x1b[2m"${step.narration}"\x1b[0m`);
+
       const next = stepIdx + 1 < steps.length ? steps[stepIdx + 1] : null;
       if (next) {
-        lines.push(`  ${DIM}Next: ${next.instruction}${RESET}`);
+        lines.push("");
+        lines.push(`  \x1b[2mNext: ${next.instruction}\x1b[0m`);
       }
     }
 
-    lines.push(`  ${DIM}[Space] next step  [Esc] stop${RESET}`);
-    lines.push(`${DIM}${"─".repeat(50)}${RESET}`);
+    lines.push("");
+    lines.push("──────────────────────────────────────────────────");
+    lines.push("  \x1b[2m[Space] next step    [Esc] stop recording\x1b[0m");
+    lines.push("──────────────────────────────────────────────────");
 
-    const output = lines.join("\n") + "\n";
-    process.stderr.write(output);
-    linesDrawn = lines.length;
+    fs.writeFileSync(INSTRUCTION_LOG_PATH, lines.join("\n") + "\n", "utf-8");
   }
 
-  // Draw initial state
-  draw(0);
+  // Write initial state
+  writeToLog(0);
 
   return {
     updateStep(stepIdx: number) {
       if (stepIdx === lastStep) return;
       lastStep = stepIdx;
-      draw(stepIdx);
+      writeToLog(stepIdx);
     },
     clear() {
-      if (linesDrawn > 0) {
-        for (let i = 0; i < linesDrawn; i++) {
-          process.stderr.write(`${MOVE_UP}${CLEAR_LINE}\r`);
-        }
-        linesDrawn = 0;
-      }
+      try { fs.unlinkSync(INSTRUCTION_LOG_PATH); } catch { /* ok */ }
     },
   };
 }
