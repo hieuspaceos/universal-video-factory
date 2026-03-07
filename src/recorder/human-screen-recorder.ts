@@ -38,7 +38,14 @@ export async function recordHumanSession(opts: HumanRecorderOptions): Promise<Re
   const videoDir = path.join(opts.outputDir, "raw-recording");
   fs.mkdirSync(videoDir, { recursive: true });
 
-  // Print script as a checklist before recording starts
+  // Save script steps as readable text file + print to terminal
+  const stepsText = opts.script.steps
+    .map((s) => `${s.step}. ${s.instruction}  (~${s.expectedDurationSec}s)`)
+    .join("\n");
+  const stepsFilePath = path.join(opts.outputDir, "script-steps.txt");
+  fs.writeFileSync(stepsFilePath, `${opts.script.title}\n${"─".repeat(55)}\n${stepsText}\n`, "utf-8");
+  log.info(`Script saved → ${stepsFilePath}`);
+
   log.info("─".repeat(55));
   log.info("SCRIPT — read through, then perform in order:");
   log.info("─".repeat(55));
