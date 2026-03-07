@@ -168,11 +168,14 @@ export async function runTutorialPipeline(
     log.info("Step 3/5: Recording screen (human-assisted)...");
     if (vp) log.info(`Recording at ${vp.w}x${vp.h} (${opts.quality})`);
     log.info("Press ` (backtick) to advance steps, ESC to stop recording.");
+    // Map per-scene audio paths for playback during recording
+    const sceneAudioPaths = sceneAudioFiles.map((sa) => sa.audioPath);
     const recording = await recordHumanSession({
       url, script, outputDir,
       viewportWidth: vp?.w,
       viewportHeight: vp?.h,
       sceneDurationsSec,
+      sceneAudioPaths,
     });
     recordingVideoPath = recording.videoPath;
     recordingEventsPath = recording.eventsPath;

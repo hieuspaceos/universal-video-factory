@@ -4,6 +4,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { chromium } from "playwright";
+import { spawn, type ChildProcess } from "child_process";
 import { convertWebmToMp4 } from "../export/ffmpeg-exporter.js";
 import { injectEventTrackers, flushEvents, reinjectAfterNavigation } from "./event-tracker.js";
 import { injectScriptOverlay, isRecordingDone, getSceneMarks, getCurrentStep } from "./script-overlay-injector.js";
@@ -25,6 +26,8 @@ export interface HumanRecorderOptions {
   viewportHeight?: number;
   /** Actual TTS durations per scene (seconds) — used for typewriter pacing */
   sceneDurationsSec?: number[];
+  /** Per-scene audio file paths — played via speaker during recording */
+  sceneAudioPaths?: string[];
 }
 
 /**
@@ -113,12 +116,16 @@ export async function recordHumanSession(opts: HumanRecorderOptions): Promise<Re
     const recordingStartTime = Date.now();
     enterAltScreen();
     const sceneDurs = opts.sceneDurationsSec;
+    const sceneAudios = opts.sceneAudioPaths;
     if (sceneDurs && sceneDurs.length > 0) {
       log.info(`Typewriter pacing from TTS: [${sceneDurs.map((d) => d.toFixed(1) + "s").join(", ")}]`);
-    } else {
-      log.info("No TTS durations — typewriter using expectedDurationSec fallback");
+    }
+    if (sceneAudios && sceneAudios.length > 0) {
+      log.info(`Scene audio playback enabled: ${sceneAudios.length} files`);
     }
     printStepDisplay(opts.script, 0, 0, false, 0, sceneDurs);
+    // Play first scene audio immediately
+    if (sceneAudios?.[0]) playSceneAudio(sceneAudios[0]);
 
     while (true) {
       await page.waitForTimeout(POLL_INTERVAL_MS);
@@ -137,6 +144,8 @@ export async function recordHumanSession(opts: HumanRecorderOptions): Promise<Re
         stepStartTime = Date.now();
         lastRevealCount = -1;
         printStepDisplay(opts.script, lastStep, 0, true, totalElapsed, sceneDurs);
+        // Play audio for the new scene
+        if (sceneAudios?.[lastStep]) playSceneAudio(sceneAudios[lastStep]);
       }
 
       // Redraw when typewriter reveals a new character or timer second changes
@@ -155,6 +164,7 @@ export async function recordHumanSession(opts: HumanRecorderOptions): Promise<Re
 
       // Check if human pressed Esc
       if (await isRecordingDone(page)) {
+        stopSceneAudio();
         leaveAltScreen();
         log.info("Recording stopped by user.");
         break;
@@ -281,6 +291,32 @@ function printStepDisplay(
   out += "──────────────────────────────────────────────────────\n";
 
   process.stderr.write(out);
+}
+
+/** Play an audio file via ffplay (non-blocking). Returns the child process to kill later. */
+let currentAudioProcess: ChildProcess | null = null;
+
+function playSceneAudio(audioPath: string): void {
+  // Kill any currently playing audio
+  if (currentAudioProcess) {
+    currentAudioProcess.kill("SIGTERM");
+    currentAudioProcess = null;
+  }
+  if (!fs.existsSync(audioPath)) return;
+  // ffplay: -nodisp = no video window, -autoexit = exit when done, -loglevel quiet
+  currentAudioProcess = spawn("ffplay", ["-nodisp", "-autoexit", "-loglevel", "quiet", audioPath], {
+    stdio: "ignore",
+    detached: false,
+  });
+  currentAudioProcess.on("exit", () => { currentAudioProcess = null; });
+  currentAudioProcess.on("error", () => { currentAudioProcess = null; });
+}
+
+function stopSceneAudio(): void {
+  if (currentAudioProcess) {
+    currentAudioProcess.kill("SIGTERM");
+    currentAudioProcess = null;
+  }
 }
 
 /** Convert raw scene marks (step + ms) into SceneMarker array with start/end */
