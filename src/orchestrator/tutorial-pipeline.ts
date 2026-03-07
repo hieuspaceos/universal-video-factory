@@ -31,6 +31,8 @@ export interface TutorialPipelineOptions {
   voiceId?: string;
   /** Resume from last checkpoint */
   resume?: boolean;
+  /** Render at 720p for faster preview with lower RAM */
+  preview?: boolean;
   /** tree-id node ID — fetches content to enrich script generation */
   treeId?: string;
   /** tree-id source (API URL or local JSON path) */
@@ -184,6 +186,7 @@ export async function runTutorialPipeline(
       projectDir: outputDir,
       outputPath: rawVideoPath,
       inputProps: renderProps as unknown as Record<string, unknown>,
+      preview: opts.preview,
     });
 
     await exportFinalVideo(rawVideoPath, finalVideoPath);

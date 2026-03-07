@@ -199,9 +199,11 @@ export async function renderVideoWithProps(options: {
   inputProps: Record<string, unknown>;
   codec?: "h264" | "h265" | "vp8" | "vp9";
   concurrency?: number;
+  /** Render at 720p for faster preview with lower RAM usage */
+  preview?: boolean;
   onProgress?: (progress: number) => void;
 }): Promise<RenderResult> {
-  const { projectDir, outputPath, inputProps, codec = "h264", concurrency = 2, onProgress } = options;
+  const { projectDir, outputPath, inputProps, codec = "h264", concurrency = 2, preview, onProgress } = options;
   const startMs = Date.now();
 
   log.info("Bundling Remotion composition...");
@@ -222,6 +224,9 @@ export async function renderVideoWithProps(options: {
   });
 
   const actualConcurrency = await safeConcurrency(concurrency);
+  // Preview mode: scale down to 720p (0.667x of 1080p) for lower RAM usage
+  const scale = preview ? 720 / 1080 : undefined;
+  if (preview) log.info("Preview mode: rendering at 720p");
   log.info(`Rendering ${composition.durationInFrames} frames at ${composition.fps}fps`);
 
   const { cancel: cancel2, cancelSignal: cancelSignal2 } = makeCancelSignal();
@@ -239,6 +244,7 @@ export async function renderVideoWithProps(options: {
       concurrency: actualConcurrency,
       cancelSignal: cancelSignal2,
       chromiumOptions: { gl: "angle" },
+      scale,
       onProgress: ({ progress }: { progress: number }) => {
         const pct = Math.round(progress * 100);
         onProgress?.(pct);

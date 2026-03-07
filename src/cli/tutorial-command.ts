@@ -44,6 +44,11 @@ export function registerTutorialCommand(yargs: Argv): void {
         .option("voice", {
           type: "string",
           description: "ElevenLabs voice ID",
+        })
+        .option("preview", {
+          type: "boolean",
+          description: "Render at 720p for faster preview with lower RAM",
+          default: false,
         }),
     async (argv) => {
       const result = await runTutorialPipeline({
@@ -54,6 +59,7 @@ export function registerTutorialCommand(yargs: Argv): void {
         voiceId: argv.voice as string | undefined,
         treeId: argv["tree-id"] as string | undefined,
         treeIdSource: argv["tree-id-source"] as string | undefined,
+        preview: argv.preview as boolean,
       });
       console.log(`\nTutorial complete!`);
       console.log(`  Video: ${result.finalVideoPath}`);
