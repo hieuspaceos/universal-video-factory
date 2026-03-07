@@ -54,12 +54,3 @@ export interface WordsTimestamps {
   scenes: SceneBoundary[];
   total_duration: number;
 }
-
-export interface WhisperXAlignRequest {
-  audioPath: string;
-  language?: string;
-}
-
-export interface WhisperXAlignResponse {
-  words: WordTimestamp[];
-}

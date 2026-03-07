@@ -28,7 +28,7 @@ Takes a web app URL and feature description → produces a complete tutorial vid
 | **Script Generation** | AI-created narration script for feature flow | Claude Sonnet 4.6 |
 | **Automated Recording** | Playwright-driven interaction capture | Playwright browser API |
 | **Voice Synthesis** | Natural TTS narration | ElevenLabs API |
-| **Subtitle Sync** | Karaoke-style subs with forced alignment | WhisperX (±0.05s precision) |
+| **Subtitle Sync** | Karaoke-style subs with character-level alignment | ElevenLabs with-timestamps |
 | **Composition** | Multi-layer video assembly | Remotion (React-based) |
 | **Export** | Hardware-accelerated 1080p HEVC | FFmpeg VideoToolbox Metal |
 | **Web Dashboard** | Job queue + real-time progress UI | Hono API + React + WebSocket |
@@ -49,7 +49,7 @@ Takes a web app URL and feature description → produces a complete tutorial vid
 |-----------|-------|-----------|
 | **Max viewport** | 1920x1080 | Remotion composition limits |
 | **Recording FPS** | 30 fps | Smooth motion at reasonable file size |
-| **Audio alignment** | ±0.05s | WhisperX forced alignment precision |
+| **Audio alignment** | ±0.05s | ElevenLabs character-level precision |
 | **Max pipeline time** | ~15 min | M4 24GB performance baseline |
 | **Estimated cost** | ~$0.67/video | Claude + ElevenLabs API usage |
 
@@ -125,7 +125,7 @@ Takes a web app URL and feature description → produces a complete tutorial vid
 | Documentation | In Progress | Architecture + API docs needed |
 
 ## Dependencies
-- **Runtime:** Node.js 20+, FFmpeg, Python 3.10+ (WhisperX)
+- **Runtime:** Node.js 20+, FFmpeg
 - **APIs:** Anthropic, ElevenLabs
 - **Libraries:** Playwright, Remotion, Hono, React, SQLite
 

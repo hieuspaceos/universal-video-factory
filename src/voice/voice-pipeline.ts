@@ -1,5 +1,5 @@
 // Voice pipeline orchestrator — script → TTS → alignment → words_timestamps.json
-// Uses WhisperX for precise alignment when available, falls back to estimated timestamps.
+// Uses ElevenLabs with-timestamps for character-level alignment.
 
 import fs from "fs";
 import path from "path";
@@ -18,7 +18,7 @@ export interface VoicePipelineOptions {
   outputDir: string;
   /** ElevenLabs voice ID (default: Rachel) */
   voiceId?: string;
-  /** Language code for WhisperX alignment */
+  /** Language code for TTS */
   language?: string;
 }
 
@@ -81,7 +81,7 @@ function alignmentToWordTimestamps(alignment: ElevenLabsAlignment): WordTimestam
  * Run the full voice pipeline:
  * 1. Preprocess script (strip scene markers, record positions)
  * 2. Generate TTS audio via ElevenLabs
- * 3. Align audio (WhisperX or estimated fallback)
+ * 3. Convert character-level alignment to word timestamps
  * 4. Merge timestamps with scene markers
  * 5. Save words_timestamps.json
  */

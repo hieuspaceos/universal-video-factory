@@ -5,7 +5,7 @@ import type { WordTimestamp, SceneTimestamp } from "./timing-calculator";
 import { UniversalTemplatePropsSchema } from "../universal-template/props-schema";
 import type { UniversalTemplateProps } from "../universal-template/props-schema";
 
-// Shape of words_timestamps.json produced by WhisperX pipeline
+// Shape of words_timestamps.json produced by voice pipeline
 interface WordsTimestampsFile {
   words: WordTimestamp[];
   scenes?: SceneMarker[];

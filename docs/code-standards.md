@@ -144,7 +144,7 @@ orchestrator.run().then(r => ...).catch(e => ...);
 
 ```typescript
 // Good — explains intent
-// WhisperX returns timestamps with +0.05s precision; merge within threshold
+// ElevenLabs with-timestamps returns character-level alignment; merge within threshold
 const merged = mergeTimestamps(timestamps, 50); // 50ms window
 
 // Bad — restates code

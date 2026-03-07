@@ -70,7 +70,6 @@ video-factory/
 │   ├── voice/                    [TTS + subtitle alignment (future use)]
 │   │   ├── types.ts             VoiceConfig, AudioTimestamp
 │   │   ├── elevenlabs-client.ts  ElevenLabsClient class (API wrapper)
-│   │   ├── whisperx-client.ts    WhisperXClient class (Python wrapper)
 │   │   ├── script-preprocessor.ts ScriptPreprocessor class
 │   │   └── timestamp-merger.ts   Timestamp alignment logic
 │   │
@@ -419,12 +418,6 @@ npm run test:watch   # Watch mode for development
 
 ## Known Issues & Workarounds
 
-### WhisperX Dependency
-- **Status:** Optional (comment out for now)
-- **Issue:** Python subprocess dependency adds complexity
-- **Workaround:** Skip TTS/subtitle phase in current build
-- **Future:** Integrate natively or use ElevenLabs only
-
 ### Remotion Concurrency
 - **Setting:** 4 workers by default
 - **Note:** Increase if hardware supports (impacts memory)
@@ -515,4 +508,3 @@ npm run test:watch   # Watch mode for development
 | `Playwright timeout` | Slow network or blocked content | Increase `PAGE_LOAD_TIMEOUT_MS` |
 | `Pipeline interrupted` | Killed mid-execution | Re-run with `--resume` |
 | `Remotion render fails` | Memory or codec issue | Reduce concurrency or use h264 |
-| `WhisperX module not found` | Python script missing | Install: `pip install whisperx` |

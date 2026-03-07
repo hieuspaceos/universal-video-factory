@@ -1,4 +1,4 @@
-// Merges WhisperX word-level timestamps with [SCENE:XX] marker positions
+// Merges word-level timestamps with [SCENE:XX] marker positions
 // to produce the final words_timestamps.json with scene boundaries.
 
 import fs from "fs";
@@ -11,7 +11,7 @@ import {
 } from "./types.js";
 
 /**
- * Merge word timestamps from WhisperX with scene marker positions from the
+ * Merge word timestamps with scene marker positions from the
  * script preprocessor. Scene boundaries are derived by mapping each marker's
  * afterWordIdx to the corresponding word's start/end time.
  */

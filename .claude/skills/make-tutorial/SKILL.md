@@ -8,7 +8,6 @@ Generate a polished 1080p tutorial video from a URL and feature description usin
 - `ELEVENLABS_API_KEY` — set in `.env.local` (text-to-speech narration)
 - `ffmpeg` with VideoToolbox — `brew install ffmpeg`
 - `node` 20+ — `brew install node`
-- `python` 3.10+ with WhisperX — `pip install whisperx` (for word-level timestamps)
 - `playwright` browsers — `npx playwright install chromium`
 
 ## Basic Usage
@@ -138,5 +137,4 @@ npx playwright codegen --save-storage=./session.json https://app.example.com
 | `ANTHROPIC_API_KEY is not set` | Add `ANTHROPIC_API_KEY=sk-...` to `.env.local` |
 | `ELEVENLABS_API_KEY is not set` | Add `ELEVENLABS_API_KEY=...` to `.env.local` |
 | `FFmpeg not found` | `brew install ffmpeg` |
-| `WhisperX service unavailable` | Start WhisperX: `python -m whisperx.server` |
 | Pipeline interrupted mid-run | Re-run with `--resume` to continue from checkpoint |
