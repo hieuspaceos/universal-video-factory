@@ -6,7 +6,26 @@ import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition, makeCancelSignal } from "@remotion/renderer";
 
 // Persistent bundle cache dir — avoids re-bundling on every render (~2-3GB RAM spike)
+// Persistent bundle cache dir — avoids re-bundling on every render (~2-3GB RAM spike)
 const BUNDLE_CACHE_DIR = path.resolve(os.tmpdir(), "video-factory-bundle-cache");
+
+// Chrome flags to limit memory usage during Remotion frame rendering
+const CHROME_MEMORY_FLAGS = [
+  "--disable-dev-shm-usage",          // Don't use /dev/shm (shared memory), use /tmp instead
+  "--js-flags=--max-old-space-size=2048", // Limit V8 heap to 2GB
+  "--disable-gpu-sandbox",
+];
+
+// Shared Remotion render options for memory optimization
+const MEMORY_OPTIMIZED_RENDER = {
+  chromiumOptions: {
+    gl: "angle" as const,
+    disableWebSecurity: false,
+  },
+  offthreadVideoCacheSizeInBytes: 512 * 1024 * 1024, // 512MB video cache limit
+  disallowParallelEncoding: true, // Encode sequentially to reduce peak RAM
+  offthreadVideoImageFormat: "jpeg" as const, // JPEG frame buffers use less RAM than PNG
+};
 import { mapProjectToRenderProps } from "./scene-timing-mapper.js";
 import type { RenderOptions, RenderResult } from "./types.js";
 import { createLogger } from "../utils/logger.js";
@@ -143,7 +162,7 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
     serveUrl: bundled,
     id: COMPOSITION_ID,
     inputProps: props,
-    chromiumOptions: { gl: "angle" },
+    chromiumOptions: MEMORY_OPTIMIZED_RENDER.chromiumOptions,
   });
 
   const actualConcurrency = await safeConcurrency(concurrency);
@@ -164,7 +183,7 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
       inputProps: props,
       concurrency: actualConcurrency,
       cancelSignal,
-      chromiumOptions: { gl: "angle" },
+      ...MEMORY_OPTIMIZED_RENDER,
       onProgress: ({ progress }: { progress: number }) => {
         const pct = Math.round(progress * 100);
         onProgress?.(pct);
@@ -220,7 +239,7 @@ export async function renderVideoWithProps(options: {
     serveUrl: bundled,
     id: COMPOSITION_ID,
     inputProps,
-    chromiumOptions: { gl: "angle" },
+    chromiumOptions: MEMORY_OPTIMIZED_RENDER.chromiumOptions,
   });
 
   const actualConcurrency = await safeConcurrency(concurrency);
@@ -243,7 +262,7 @@ export async function renderVideoWithProps(options: {
       inputProps,
       concurrency: actualConcurrency,
       cancelSignal: cancelSignal2,
-      chromiumOptions: { gl: "angle" },
+      ...MEMORY_OPTIMIZED_RENDER,
       scale,
       onProgress: ({ progress }: { progress: number }) => {
         const pct = Math.round(progress * 100);
