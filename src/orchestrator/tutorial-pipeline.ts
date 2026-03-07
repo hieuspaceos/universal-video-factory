@@ -214,6 +214,12 @@ export async function runTutorialPipeline(
   return { scriptPath, recordingDir: outputDir, markersPath, finalVideoPath };
 }
 
+/** Outro narration lines by language */
+const OUTRO_NARRATION: Record<string, string> = {
+  en: "Thanks for watching! Now it's your turn to try it out.",
+  vi: "Cảm ơn bạn đã xem! Bây giờ đến lượt bạn thực hành nhé.",
+};
+
 /** Build narration text from tutorial script steps (with scene markers for voice pipeline) */
 function buildNarrationFromScript(script: TutorialScript): string {
   const lines: string[] = [];
@@ -222,5 +228,10 @@ function buildNarrationFromScript(script: TutorialScript): string {
     lines.push(script.steps[i].narration);
     lines.push("");
   }
+  // Outro scene — closing narration
+  const outroIdx = script.steps.length + 1;
+  lines.push(`[SCENE:${String(outroIdx).padStart(2, "0")}]`);
+  lines.push(OUTRO_NARRATION[script.lang] ?? OUTRO_NARRATION["en"]!);
+  lines.push("");
   return lines.join("\n");
 }

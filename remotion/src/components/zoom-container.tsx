@@ -27,15 +27,14 @@ const TRANSITION_FRAMES = 15;
 const PAN_FRAMES = 20;
 
 /**
- * Wraps scene content with spring-animated zoom keyed to click events.
+ * Wraps scene content with continuous spring-animated zoom.
  *
- * For each zoom event:
- *   - Zoom in  : spring from 1.0 → target scale (15 frames)
- *   - Hold     : maintain target scale for `duration` frames
- *   - Zoom out : spring back to 1.0 (15 frames)
+ * Instead of zooming in/out per event, maintains a seamless zoom:
+ *   - First event  : spring from 1.0 → target scale
+ *   - Between events: stay zoomed, smoothly pan focus point
+ *   - Last event   : spring back to 1.0 after hold
  *
- * When consecutive zoom events overlap or are close together,
- * the focus point smoothly pans between them instead of snapping.
+ * This produces smooth, professional-looking video output.
  */
 export const ZoomContainer: React.FC<ZoomContainerProps> = ({
   zoomEvents,
@@ -44,62 +43,72 @@ export const ZoomContainer: React.FC<ZoomContainerProps> = ({
   const frame = useCurrentFrame();
   const { width, height, fps } = useVideoConfig();
 
-  // Compute combined scale and origin from all active zoom events
   let currentScale = 1.0;
   let originX = width / 2;
   let originY = height / 2;
-  for (let i = 0; i < zoomEvents.length; i++) {
-    const event = zoomEvents[i];
-    const targetScale = Math.min(event.scale, MAX_SCALE);
-    const zoomInEnd = event.frame + TRANSITION_FRAMES;
-    const holdEnd = zoomInEnd + event.duration;
-    const zoomOutEnd = holdEnd + TRANSITION_FRAMES;
 
-    if (frame < event.frame || frame > zoomOutEnd) continue;
+  if (zoomEvents.length > 0) {
+    const firstEvent = zoomEvents[0];
+    const lastEvent = zoomEvents[zoomEvents.length - 1];
 
-    const relFrame = frame - event.frame;
+    // Overall zoom timeline: zoom in at first event, zoom out after last event
+    const zoomInStart = firstEvent.frame;
+    const zoomInEnd = zoomInStart + TRANSITION_FRAMES;
+    const zoomOutStart = lastEvent.frame + lastEvent.duration;
+    const zoomOutEnd = zoomOutStart + TRANSITION_FRAMES;
 
-    let scale: number;
-    if (relFrame <= TRANSITION_FRAMES) {
-      // Zoom in phase
-      const progress = spring({
-        fps,
-        frame: relFrame,
-        config: SPRING_CFG,
-        durationInFrames: TRANSITION_FRAMES,
-      });
-      scale = 1.0 + (targetScale - 1.0) * progress;
-    } else if (relFrame <= TRANSITION_FRAMES + event.duration) {
-      // Hold phase
-      scale = targetScale;
-    } else {
-      // Zoom out phase
-      const outFrame = relFrame - (TRANSITION_FRAMES + event.duration);
-      const progress = spring({
-        fps,
-        frame: outFrame,
-        config: SPRING_CFG,
-        durationInFrames: TRANSITION_FRAMES,
-      });
-      scale = targetScale - (targetScale - 1.0) * progress;
+    // Find current active event's target scale
+    let activeScale = Math.min(firstEvent.scale, MAX_SCALE);
+    for (const event of zoomEvents) {
+      if (frame >= event.frame) {
+        activeScale = Math.min(event.scale, MAX_SCALE);
+      }
     }
 
-    currentScale = scale;
+    if (frame >= zoomInStart && frame <= zoomOutEnd) {
+      if (frame <= zoomInEnd) {
+        // Zoom in phase (first event)
+        const progress = spring({
+          fps,
+          frame: frame - zoomInStart,
+          config: SPRING_CFG,
+          durationInFrames: TRANSITION_FRAMES,
+        });
+        currentScale = 1.0 + (activeScale - 1.0) * progress;
+      } else if (frame <= zoomOutStart) {
+        // Holding zoom — continuous throughout all events
+        currentScale = activeScale;
+      } else {
+        // Zoom out phase (after last event)
+        const progress = spring({
+          fps,
+          frame: frame - zoomOutStart,
+          config: SPRING_CFG,
+          durationInFrames: TRANSITION_FRAMES,
+        });
+        currentScale = activeScale - (activeScale - 1.0) * progress;
+      }
+    }
 
-    // Smooth pan: interpolate origin from previous event's focus point
-    if (i > 0) {
-      const prevEvent = zoomEvents[i - 1];
-      const panStart = event.frame;
-      const panEnd = event.frame + PAN_FRAMES;
-      const panProgress = interpolate(frame, [panStart, panEnd], [0, 1], {
-        extrapolateLeft: "clamp",
-        extrapolateRight: "clamp",
-      });
-      originX = prevEvent.x + (event.x - prevEvent.x) * panProgress;
-      originY = prevEvent.y + (event.y - prevEvent.y) * panProgress;
-    } else {
-      originX = event.x;
-      originY = event.y;
+    // Determine focus point — find latest active event and pan from previous
+    for (let i = zoomEvents.length - 1; i >= 0; i--) {
+      if (frame >= zoomEvents[i].frame) {
+        if (i > 0) {
+          const prev = zoomEvents[i - 1];
+          const panProgress = interpolate(
+            frame,
+            [zoomEvents[i].frame, zoomEvents[i].frame + PAN_FRAMES],
+            [0, 1],
+            { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
+          );
+          originX = prev.x + (zoomEvents[i].x - prev.x) * panProgress;
+          originY = prev.y + (zoomEvents[i].y - prev.y) * panProgress;
+        } else {
+          originX = zoomEvents[i].x;
+          originY = zoomEvents[i].y;
+        }
+        break;
+      }
     }
   }
 
