@@ -112,9 +112,10 @@ export async function runTutorialPipeline(
     recordingEventsPath = data.eventsPath;
   } else {
     // Match recording viewport to output quality
+    // 4k records at 1440p (max for most displays) and upscales during render
     const viewportSizes: Record<string, { w: number; h: number }> = {
       "1440p": { w: 2560, h: 1440 },
-      "4k": { w: 3840, h: 2160 },
+      "4k": { w: 2560, h: 1440 },
     };
     const vp = opts.quality ? viewportSizes[opts.quality] : undefined;
     log.info("Step 2/5: Recording screen (human-assisted)...");
