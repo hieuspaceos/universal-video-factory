@@ -111,9 +111,20 @@ export async function runTutorialPipeline(
     recordingVideoPath = data.videoPath;
     recordingEventsPath = data.eventsPath;
   } else {
+    // Match recording viewport to output quality
+    const viewportSizes: Record<string, { w: number; h: number }> = {
+      "1440p": { w: 2560, h: 1440 },
+      "4k": { w: 3840, h: 2160 },
+    };
+    const vp = opts.quality ? viewportSizes[opts.quality] : undefined;
     log.info("Step 2/5: Recording screen (human-assisted)...");
+    if (vp) log.info(`Recording at ${vp.w}x${vp.h} (${opts.quality})`);
     log.info("Press SPACE to advance steps, ESC to stop recording.");
-    const recording = await recordHumanSession({ url, script, outputDir });
+    const recording = await recordHumanSession({
+      url, script, outputDir,
+      viewportWidth: vp?.w,
+      viewportHeight: vp?.h,
+    });
     recordingVideoPath = recording.videoPath;
     recordingEventsPath = recording.eventsPath;
     await saveCheckpoint(outputDir, "B", {
