@@ -39,6 +39,12 @@ vi.mock("../../src/utils/logger.js", () => ({
   }),
 }));
 
+// Mock os.freemem to return plenty of RAM (4GB) so safeConcurrency doesn't override
+vi.mock("os", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("os")>();
+  return { ...actual, freemem: vi.fn(() => 4 * 1024 * 1024 * 1024) };
+});
+
 vi.mock("fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("fs")>();
   return {

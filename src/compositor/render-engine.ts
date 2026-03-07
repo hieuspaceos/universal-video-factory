@@ -1,4 +1,5 @@
 import * as path from "path";
+import * as os from "os";
 import * as fs from "fs";
 import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition } from "@remotion/renderer";
@@ -7,6 +8,21 @@ import type { RenderOptions, RenderResult } from "./types.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("render-engine");
+
+/** Minimum free RAM (MB) required to render. Below this → concurrency=1. */
+const MIN_FREE_RAM_MB = 2048;
+
+/** Get safe concurrency based on available system memory */
+function safeConcurrency(requested: number): number {
+  const freeBytes = os.freemem();
+  const freeMB = Math.round(freeBytes / 1024 / 1024);
+  if (freeMB < MIN_FREE_RAM_MB) {
+    log.warn(`Low RAM: ${freeMB}MB free (need ${MIN_FREE_RAM_MB}MB). Forcing concurrency=1 to prevent freeze.`);
+    return 1;
+  }
+  log.info(`Available RAM: ${freeMB}MB — using concurrency=${requested}`);
+  return requested;
+}
 
 // Path to the Remotion entry point (index file for Root.tsx)
 const REMOTION_ROOT = path.resolve(
@@ -58,6 +74,7 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
     inputProps: props,
   });
 
+  const actualConcurrency = safeConcurrency(concurrency);
   log.info(`Rendering ${composition.durationInFrames} frames at ${composition.fps}fps`);
 
   await renderMedia({
@@ -66,7 +83,7 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
     codec,
     outputLocation: outputPath,
     inputProps: props,
-    concurrency,
+    concurrency: actualConcurrency,
     onProgress: ({ progress }: { progress: number }) => {
       const pct = Math.round(progress * 100);
       onProgress?.(pct);
@@ -110,6 +127,7 @@ export async function renderVideoWithProps(options: {
     inputProps,
   });
 
+  const actualConcurrency = safeConcurrency(concurrency);
   log.info(`Rendering ${composition.durationInFrames} frames at ${composition.fps}fps`);
 
   await renderMedia({
@@ -118,7 +136,7 @@ export async function renderVideoWithProps(options: {
     codec,
     outputLocation: outputPath,
     inputProps,
-    concurrency,
+    concurrency: actualConcurrency,
     onProgress: ({ progress }: { progress: number }) => {
       const pct = Math.round(progress * 100);
       onProgress?.(pct);
