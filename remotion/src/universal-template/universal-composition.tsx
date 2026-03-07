@@ -1,5 +1,5 @@
 import React from "react";
-import { useVideoConfig, Sequence } from "remotion";
+import { useVideoConfig, Sequence, Audio } from "remotion";
 import { ContinuousScreen } from "../components/screen-clip";
 import { AudioLayer } from "../components/audio-layer";
 import { KaraokeSubtitles } from "../components/karaoke-subtitles";
@@ -157,10 +157,31 @@ export const UniversalComposition: React.FC<UniversalTemplateProps> = ({
         </Sequence>
       )}
 
-      {/* Layer 5: Audio — starts after intro, spans content + outro */}
-      <Sequence from={contentStart} durationInFrames={durationInFrames - contentStart} name="audio">
-        <AudioLayer audioPath={audioPath} />
-      </Sequence>
+      {/* Layer 5: Audio — per-scene audio for voice sync, or single track fallback */}
+      {(() => {
+        const hasPerSceneAudio = scenes.some((s) => s.audioPath);
+        if (hasPerSceneAudio) {
+          // Per-scene audio: each scene's narration starts at its video start frame
+          return scenes
+            .filter((s) => s.audioPath)
+            .map((s) => (
+              <Sequence
+                key={`audio-${s.id}`}
+                from={contentStart + s.startFrame}
+                durationInFrames={s.durationFrames}
+                name={`audio-${s.id}`}
+              >
+                <Audio src={s.audioPath!} volume={1.0} />
+              </Sequence>
+            ));
+        }
+        // Fallback: single audio track spanning content + outro
+        return (
+          <Sequence from={contentStart} durationInFrames={durationInFrames - contentStart} name="audio">
+            <AudioLayer audioPath={audioPath} />
+          </Sequence>
+        );
+      })()}
 
       {/* Layer 6: Karaoke subtitles — fixed overlay, visible only during content */}
       <KaraokeSubtitles

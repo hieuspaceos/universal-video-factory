@@ -98,6 +98,7 @@ export class PipelineCoordinator {
         voiceResult = {
           audioPath: data.audioPath, timestampsPath: data.timestampsPath,
           totalDuration: data.totalDuration, sceneDurations: data.sceneDurations,
+          sceneAudioFiles: [],
         };
       } else {
         this.opts.progress?.startPhase("B", "Voice — TTS + alignment");

@@ -7,7 +7,8 @@ import { preprocessScript } from "./script-preprocessor.js";
 import { textToSpeechWithTimestamps } from "./elevenlabs-client.js";
 import type { ElevenLabsAlignment } from "./elevenlabs-client.js";
 import { mergeTimestamps, saveTimestamps } from "./timestamp-merger.js";
-import type { WordTimestamp } from "./types.js";
+import { splitAudioByScenes } from "./audio-scene-splitter.js";
+import type { WordTimestamp, SceneAudioFile } from "./types.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("voice");
@@ -42,6 +43,8 @@ export interface VoicePipelineResult {
   totalDuration: number;
   /** Per-scene narration durations for driving video capture timing */
   sceneDurations: SceneDuration[];
+  /** Per-scene split audio files for scene-level audio-video sync */
+  sceneAudioFiles: SceneAudioFile[];
 }
 
 /**
@@ -117,6 +120,10 @@ export async function runVoicePipeline(
   const timestampsPath = path.join(opts.outputDir, "words_timestamps.json");
   saveTimestamps(merged, timestampsPath);
 
+  // 6. Split audio into per-scene files for scene-level sync
+  const sceneAudioDir = path.join(opts.outputDir, "scene-audio");
+  const sceneAudioFiles = await splitAudioByScenes(audioPath, merged.scenes, sceneAudioDir);
+
   // Compute per-scene durations for voice-driven capture timing
   const sceneDurations: SceneDuration[] = merged.scenes.map((s) => ({
     id: s.id,
@@ -129,5 +136,6 @@ export async function runVoicePipeline(
     timestampsPath,
     totalDuration: merged.total_duration,
     sceneDurations,
+    sceneAudioFiles,
   };
 }

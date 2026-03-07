@@ -54,3 +54,17 @@ export interface WordsTimestamps {
   scenes: SceneBoundary[];
   total_duration: number;
 }
+
+/** Per-scene audio file produced by splitting the single TTS output */
+export interface SceneAudioFile {
+  /** Scene ID, e.g. "SCENE:01" */
+  sceneId: string;
+  /** Absolute path to the split audio file */
+  audioPath: string;
+  /** Duration of this scene's audio in seconds */
+  durationSec: number;
+  /** Start time in the original single audio (seconds) */
+  originalStartSec: number;
+  /** End time in the original single audio (seconds) */
+  originalEndSec: number;
+}

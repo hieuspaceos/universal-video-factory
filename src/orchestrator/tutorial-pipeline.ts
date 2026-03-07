@@ -163,12 +163,18 @@ export async function runTutorialPipeline(
   const audioDir = path.join(outputDir, "audio");
   let voiceAudioPath: string;
   let voiceTimestampsPath: string;
+  let sceneAudioFiles: Array<{ sceneId: string; audioPath: string; durationSec: number; originalStartSec: number; originalEndSec: number }> = [];
 
   if (isPhaseComplete(checkpoint, "D")) {
-    const data = getPhaseData(checkpoint, "D") as { audioPath: string; timestampsPath: string };
+    const data = getPhaseData(checkpoint, "D") as {
+      audioPath: string;
+      timestampsPath: string;
+      sceneAudioFiles?: typeof sceneAudioFiles;
+    };
     log.info("Step 4/5: skipped (checkpoint)");
     voiceAudioPath = data.audioPath;
     voiceTimestampsPath = data.timestampsPath;
+    sceneAudioFiles = data.sceneAudioFiles ?? [];
   } else {
     log.info("Step 4/5: Generating voice...");
     const narrationText = buildNarrationFromScript(script);
@@ -185,12 +191,14 @@ export async function runTutorialPipeline(
     });
     voiceAudioPath = voiceResult.audioPath;
     voiceTimestampsPath = voiceResult.timestampsPath;
+    sceneAudioFiles = voiceResult.sceneAudioFiles;
     await saveCheckpoint(outputDir, "D", {
       audioPath: voiceResult.audioPath,
       timestampsPath: voiceResult.timestampsPath,
       totalDuration: voiceResult.totalDuration,
+      sceneAudioFiles: voiceResult.sceneAudioFiles,
     });
-    log.info(`Voice: ${voiceResult.totalDuration.toFixed(1)}s`);
+    log.info(`Voice: ${voiceResult.totalDuration.toFixed(1)}s, ${sceneAudioFiles.length} scene audio(s)`);
   }
 
   // Step 5: Render with Remotion + export
@@ -201,7 +209,7 @@ export async function runTutorialPipeline(
     const videoPath = `/${path.relative(outputDir, recordingVideoPath)}`;
     const audioPath = `/${path.relative(outputDir, voiceAudioPath)}`;
 
-    const renderProps = mapMarkersToRenderProps(markersPath, videoPath, audioPath, voiceTimestampsPath);
+    const renderProps = mapMarkersToRenderProps(markersPath, videoPath, audioPath, voiceTimestampsPath, sceneAudioFiles);
     const rawVideoPath = path.join(outputDir, "raw-render.mp4");
 
     await renderVideoWithProps({

@@ -9,6 +9,8 @@ export interface SceneTiming {
   videoPath: string;   // absolute path to scene-XX.mp4
   startFrame: number;  // frame number in final composition
   durationFrames: number;
+  /** Per-scene audio path for voice sync (optional — falls back to single audio) */
+  audioPath?: string;
 }
 
 export interface WordFrame {

@@ -7,6 +7,7 @@ import type { MarkersFile } from "../detection/detection-types.js";
 import { MarkersFileSchema } from "../detection/detection-types.js";
 import type { SceneTiming, WordFrame, ClickEvent, RenderInputProps } from "./types.js";
 import { DEFAULT_INTRO_FRAMES, DEFAULT_OUTRO_FRAMES } from "./types.js";
+import type { SceneAudioFile } from "../voice/types.js";
 
 const FPS = 30;
 
@@ -48,18 +49,33 @@ export function mapMarkersToRenderProps(
   markersPath: string,
   videoPath: string,
   audioPath: string,
-  wordsPath?: string
+  wordsPath?: string,
+  sceneAudioFiles?: SceneAudioFile[]
 ): MarkerRenderProps {
   const markersRaw = JSON.parse(fs.readFileSync(markersPath, "utf-8"));
   const markers: MarkersFile = MarkersFileSchema.parse(markersRaw);
 
+  // Build scene-audio lookup by scene number (e.g. "SCENE:01" → audioPath)
+  const sceneAudioMap = new Map<string, string>();
+  if (sceneAudioFiles) {
+    for (const sa of sceneAudioFiles) {
+      // Extract scene number from "SCENE:01" → "01"
+      const num = sa.sceneId.replace("SCENE:", "");
+      sceneAudioMap.set(num, sa.audioPath);
+    }
+  }
+
   // Scenes → frame-based, offset by intro
-  const scenes: SceneTiming[] = markers.scenes.map((s) => ({
-    id: `scene-${String(s.id).padStart(2, "0")}`,
-    videoPath,
-    startFrame: msToFrames(s.startMs),
-    durationFrames: Math.max(1, msToFrames(s.endMs - s.startMs)),
-  }));
+  const scenes: SceneTiming[] = markers.scenes.map((s) => {
+    const sceneNum = String(s.id).padStart(2, "0");
+    return {
+      id: `scene-${sceneNum}`,
+      videoPath,
+      startFrame: msToFrames(s.startMs),
+      durationFrames: Math.max(1, msToFrames(s.endMs - s.startMs)),
+      audioPath: sceneAudioMap.get(sceneNum),
+    };
+  });
 
   // Click markers → ClickEvent props
   // No intro offset — these render inside <Sequence from={introDuration}>,
@@ -97,14 +113,48 @@ export function mapMarkersToRenderProps(
     }));
 
   // Words timestamps (optional — may not exist yet if voice not generated)
+  // When per-scene audio is used, word frames are offset to each scene's start
+  // so karaoke subtitles align with the scene's audio, not the original single track
   let words: WordFrame[] = [];
   if (wordsPath && fs.existsSync(wordsPath)) {
     const wordsRaw = JSON.parse(fs.readFileSync(wordsPath, "utf-8"));
-    words = (wordsRaw.words ?? []).map((w: { word: string; start: number; end: number }) => ({
-      word: w.word,
-      startFrame: Math.round(w.start * FPS) + DEFAULT_INTRO_FRAMES,
-      endFrame: Math.round(w.end * FPS) + DEFAULT_INTRO_FRAMES,
-    }));
+    const hasPerSceneAudio = sceneAudioFiles && sceneAudioFiles.length > 0;
+
+    if (hasPerSceneAudio && wordsRaw.scenes) {
+      // Per-scene mode: offset each word relative to its scene's video start frame
+      const sceneBoundaries: Array<{ start_time: number; end_time: number }> = wordsRaw.scenes;
+      const allWords: Array<{ word: string; start: number; end: number }> = wordsRaw.words ?? [];
+
+      for (let si = 0; si < sceneBoundaries.length; si++) {
+        const sb = sceneBoundaries[si];
+        const scene = scenes[si];
+        if (!scene || !sb) continue;
+
+        // Find words belonging to this scene (by time range in original audio)
+        const sceneWords = allWords.filter(
+          (w) => w.start >= sb.start_time - 0.01 && w.end <= sb.end_time + 0.01
+        );
+
+        // Offset: word time relative to scene audio start → absolute frame in composition
+        const sceneStartFrame = DEFAULT_INTRO_FRAMES + scene.startFrame;
+        for (const w of sceneWords) {
+          const relativeStart = w.start - sb.start_time;
+          const relativeEnd = w.end - sb.start_time;
+          words.push({
+            word: w.word,
+            startFrame: Math.round(relativeStart * FPS) + sceneStartFrame,
+            endFrame: Math.round(relativeEnd * FPS) + sceneStartFrame,
+          });
+        }
+      }
+    } else {
+      // Legacy single-audio mode: global offset by intro
+      words = (wordsRaw.words ?? []).map((w: { word: string; start: number; end: number }) => ({
+        word: w.word,
+        startFrame: Math.round(w.start * FPS) + DEFAULT_INTRO_FRAMES,
+        endFrame: Math.round(w.end * FPS) + DEFAULT_INTRO_FRAMES,
+      }));
+    }
   }
 
   // Cursor trail → frame-based

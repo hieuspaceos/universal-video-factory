@@ -6,6 +6,8 @@ const SceneSchema = z.object({
   videoPath: z.string(),
   startFrame: z.number().int().nonnegative(),
   durationFrames: z.number().int().positive(),
+  /** Per-scene audio path for voice sync (optional — falls back to single audioPath) */
+  audioPath: z.string().optional(),
 });
 
 // Zod schema for a single word timestamp
