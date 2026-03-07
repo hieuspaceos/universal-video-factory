@@ -1,16 +1,10 @@
 // ElevenLabs API client — list voices, clone voice, text-to-speech.
-// Loads ELEVENLABS_API_KEY from .env.local via dotenv.
+// Expects ELEVENLABS_API_KEY to be loaded by CLI entry point.
 
 import fs from "fs";
 import path from "path";
-import { createRequire } from "module";
 import { type ElevenLabsVoice, type TTSOptions, type VoiceSettings } from "./types.js";
 import { withRetry } from "../utils/retry.js";
-
-// Load .env.local
-const require = createRequire(import.meta.url);
-const dotenv = require("dotenv");
-dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
 
 const BASE_URL = "https://api.elevenlabs.io";
 const DEFAULT_MODEL = "eleven_multilingual_v2";
@@ -18,6 +12,13 @@ const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   stability: 0.5,
   similarity_boost: 0.75,
 };
+
+/** Fetch with AbortController timeout to prevent hung requests */
+function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 30_000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
 
 function getApiKey(): string {
   const key = process.env.ELEVENLABS_API_KEY;
@@ -36,9 +37,9 @@ function headers(extra: Record<string, string> = {}): Record<string, string> {
 
 /** Fetch all available voices from the ElevenLabs account. */
 export async function listVoices(): Promise<ElevenLabsVoice[]> {
-  const res = await fetch(`${BASE_URL}/v1/voices`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/v1/voices`, {
     headers: headers({ Accept: "application/json" }),
-  });
+  }, 15_000);
   if (!res.ok) {
     throw new Error(`listVoices failed: ${res.status} ${await res.text()}`);
   }
@@ -58,11 +59,11 @@ export async function cloneVoice(name: string, referenceAudioPath: string): Prom
   const blob = new Blob([audioBuffer], { type: "audio/wav" });
   form.append("files", blob, path.basename(referenceAudioPath));
 
-  const res = await fetch(`${BASE_URL}/v1/voices/add`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/v1/voices/add`, {
     method: "POST",
     headers: headers(),
     body: form,
-  });
+  }, 60_000);
 
   if (!res.ok) {
     throw new Error(`cloneVoice failed: ${res.status} ${await res.text()}`);
@@ -124,13 +125,13 @@ export async function textToSpeechWithTimestamps(
 
   return withRetry(
     async () => {
-      const res = await fetch(`${BASE_URL}/v1/text-to-speech/${voiceId}/with-timestamps`, {
+      const res = await fetchWithTimeout(`${BASE_URL}/v1/text-to-speech/${voiceId}/with-timestamps`, {
         method: "POST",
         headers: headers({
           "Content-Type": "application/json",
         }),
         body: JSON.stringify(body),
-      });
+      }, 60_000);
 
       if (res.status === 429) {
         throw new Error(`Rate limited (429) — will retry`);
