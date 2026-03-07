@@ -102,10 +102,10 @@ export async function recordHumanSession(opts: HumanRecorderOptions): Promise<Re
       } catch { /* page may be transitioning */ }
     });
 
-    // Live terminal display during recording — only redraw on changes
+    // Live terminal display during recording — redraws for typewriter narration
     let lastStep = 0;
     let stepStartTime = Date.now();
-    let lastDisplayedSec = -1;
+    let lastRevealCount = -1;
 
     // Switch to alternate screen for clean live display
     const recordingStartTime = Date.now();
@@ -127,15 +127,21 @@ export async function recordHumanSession(opts: HumanRecorderOptions): Promise<Re
       if (justAdvanced) {
         lastStep = currentStep;
         stepStartTime = Date.now();
-        lastDisplayedSec = -1;
+        lastRevealCount = -1;
         printStepDisplay(opts.script, lastStep, 0, true, totalElapsed);
       }
 
-      // Only redraw when timer second changes
-      const elapsed = Math.round((Date.now() - stepStartTime) / 1000);
-      if (!justAdvanced && elapsed !== lastDisplayedSec) {
-        lastDisplayedSec = elapsed;
-        printStepDisplay(opts.script, lastStep, elapsed, false, totalElapsed);
+      // Redraw when typewriter reveals a new character or timer second changes
+      const elapsedMs = Date.now() - stepStartTime;
+      const elapsedSec = elapsedMs / 1000;
+      const step = lastStep < opts.script.steps.length ? opts.script.steps[lastStep] : null;
+      const narLen = step?.narration.length ?? 0;
+      const duration = step?.expectedDurationSec || 5;
+      const currentReveal = Math.min(narLen, Math.floor((narLen / duration) * elapsedSec));
+
+      if (!justAdvanced && currentReveal !== lastRevealCount) {
+        lastRevealCount = currentReveal;
+        printStepDisplay(opts.script, lastStep, elapsedSec, false, totalElapsed);
       }
 
       // Check if human pressed Esc
@@ -214,7 +220,7 @@ function leaveAltScreen(): void {
 function printStepDisplay(
   script: TutorialScript,
   stepIdx: number,
-  elapsedSec: number,
+  elapsedSec: number,  // fractional seconds for typewriter precision
   justAdvanced: boolean,
   totalElapsedSec?: number,
 ): void {
@@ -242,11 +248,17 @@ function printStepDisplay(
     const step = steps[stepIdx]!;
     const totalStr = totalElapsedSec != null ? `  \x1b[2mTotal: ${totalElapsedSec}s\x1b[0m` : "";
 
-    out += `  \x1b[38;5;75m\x1b[1mStep ${stepIdx + 1} / ${total}\x1b[0m  \x1b[33m${elapsedSec}s\x1b[0m${totalStr}\n\n`;
+    out += `  \x1b[38;5;75m\x1b[1mStep ${stepIdx + 1} / ${total}\x1b[0m  \x1b[33m${Math.round(elapsedSec)}s\x1b[0m${totalStr}\n\n`;
     out += `  \x1b[1m→ ${step.instruction}\x1b[0m\n\n`;
 
-    // Show narration text — exact same text that will be spoken by TTS
-    out += `  \x1b[38;5;222m🎙 "${step.narration}"\x1b[0m\n\n`;
+    // Typewriter narration — reveals text over expectedDurationSec to match TTS pacing
+    const narration = step.narration;
+    const duration = step.expectedDurationSec || 5;
+    const charsPerSec = narration.length / duration;
+    const revealCount = Math.min(narration.length, Math.floor(charsPerSec * elapsedSec));
+    const revealed = narration.slice(0, revealCount);
+    const hidden = narration.slice(revealCount);
+    out += `  \x1b[38;5;222m🎙 "${revealed}\x1b[38;5;238m${hidden}\x1b[38;5;222m"\x1b[0m\n\n`;
 
     const next = stepIdx + 1 < total ? steps[stepIdx + 1] : null;
     if (next) {
