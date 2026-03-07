@@ -12,6 +12,8 @@ const log = createLogger("render-engine");
 /** Below this → concurrency=1. Below CRITICAL → abort render. */
 const LOW_RAM_MB = 2048;
 const CRITICAL_RAM_MB = 512;
+/** How often to check RAM during render (ms) */
+const RAM_CHECK_INTERVAL_MS = 3000;
 
 /** Get safe concurrency based on available system memory */
 function safeConcurrency(requested: number): number {
@@ -27,6 +29,22 @@ function safeConcurrency(requested: number): number {
   }
   log.info(`Available RAM: ${freeMB}MB — using concurrency=${requested}`);
   return requested;
+}
+
+/**
+ * Monitor RAM during render. If it drops below critical threshold,
+ * call the cancel callback to abort before system freezes.
+ * Returns a cleanup function to stop monitoring.
+ */
+function startRamMonitor(onCritical: () => void): () => void {
+  const timer = setInterval(() => {
+    const freeMB = Math.round(os.freemem() / 1024 / 1024);
+    if (freeMB < CRITICAL_RAM_MB) {
+      log.error(`CRITICAL: RAM dropped to ${freeMB}MB during render — aborting to prevent freeze!`);
+      onCritical();
+    }
+  }, RAM_CHECK_INTERVAL_MS);
+  return () => clearInterval(timer);
 }
 
 // Path to the Remotion entry point (index file for Root.tsx)
@@ -82,19 +100,37 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
   const actualConcurrency = safeConcurrency(concurrency);
   log.info(`Rendering ${composition.durationInFrames} frames at ${composition.fps}fps`);
 
-  await renderMedia({
-    composition,
-    serveUrl: bundled,
-    codec,
-    outputLocation: outputPath,
-    inputProps: props,
-    concurrency: actualConcurrency,
-    onProgress: ({ progress }: { progress: number }) => {
-      const pct = Math.round(progress * 100);
-      onProgress?.(pct);
-      process.stdout.write(`\r[render-engine] Progress: ${pct}%`);
-    },
-  });
+  // Monitor RAM during render — abort if critically low
+  let abortController: AbortController | undefined;
+  try {
+    abortController = new AbortController();
+  } catch { /* AbortController not available in older Node */ }
+
+  const stopMonitor = startRamMonitor(() => abortController?.abort());
+
+  try {
+    await renderMedia({
+      composition,
+      serveUrl: bundled,
+      codec,
+      outputLocation: outputPath,
+      inputProps: props,
+      concurrency: actualConcurrency,
+      cancelSignal: abortController?.signal,
+      onProgress: ({ progress }: { progress: number }) => {
+        const pct = Math.round(progress * 100);
+        onProgress?.(pct);
+        process.stdout.write(`\r[render-engine] Progress: ${pct}%`);
+      },
+    });
+  } catch (err) {
+    if (abortController?.signal.aborted) {
+      throw new Error("Render aborted: RAM critically low. Close other apps and retry.");
+    }
+    throw err;
+  } finally {
+    stopMonitor();
+  }
 
   process.stdout.write("\n");
 
@@ -135,19 +171,36 @@ export async function renderVideoWithProps(options: {
   const actualConcurrency = safeConcurrency(concurrency);
   log.info(`Rendering ${composition.durationInFrames} frames at ${composition.fps}fps`);
 
-  await renderMedia({
-    composition,
-    serveUrl: bundled,
-    codec,
-    outputLocation: outputPath,
-    inputProps,
-    concurrency: actualConcurrency,
-    onProgress: ({ progress }: { progress: number }) => {
-      const pct = Math.round(progress * 100);
-      onProgress?.(pct);
-      process.stdout.write(`\r[render-engine] Progress: ${pct}%`);
-    },
-  });
+  let abortController: AbortController | undefined;
+  try {
+    abortController = new AbortController();
+  } catch { /* older Node fallback */ }
+
+  const stopMonitor = startRamMonitor(() => abortController?.abort());
+
+  try {
+    await renderMedia({
+      composition,
+      serveUrl: bundled,
+      codec,
+      outputLocation: outputPath,
+      inputProps,
+      concurrency: actualConcurrency,
+      cancelSignal: abortController?.signal,
+      onProgress: ({ progress }: { progress: number }) => {
+        const pct = Math.round(progress * 100);
+        onProgress?.(pct);
+        process.stdout.write(`\r[render-engine] Progress: ${pct}%`);
+      },
+    });
+  } catch (err) {
+    if (abortController?.signal.aborted) {
+      throw new Error("Render aborted: RAM critically low. Close other apps and retry.");
+    }
+    throw err;
+  } finally {
+    stopMonitor();
+  }
 
   process.stdout.write("\n");
   const durationMs = Date.now() - startMs;
